@@ -6,6 +6,34 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 
 const EXCEL_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const PERIMETER_ETM_LIMIT = 1;
+const SKINFOLD_ETM_LIMIT = 5;
+
+type MeasurementKind = "perimeter" | "skinfold";
+
+const antropoFields = [
+  { key: "braco", label: "Braço Direito (cm)", excelHeader: "Braço (cm)", kind: "perimeter" },
+  { key: "cintura", label: "Cintura (cm)", excelHeader: "Cintura (cm)", kind: "perimeter" },
+  { key: "panturrilha", label: "Panturrilha Direita (cm)", excelHeader: "Panturrilha (cm)", kind: "perimeter" },
+] as const;
+
+const isakFields = [
+  { key: "subscap", label: "Dobra subescapular (mm)", kind: "skinfold" },
+  { key: "triceps", label: "Dobra de tríceps (mm)", kind: "skinfold" },
+  { key: "biceps", label: "Dobra de bíceps (mm)", kind: "skinfold" },
+  { key: "iliaca", label: "Dobra de crista ilíaca (mm)", kind: "skinfold" },
+  { key: "supraesp", label: "Dobra supraespinhal (mm)", kind: "skinfold" },
+  { key: "abdom", label: "Dobra abdominal (mm)", kind: "skinfold" },
+  { key: "coxa", label: "Dobra de coxa anterior (mm)", kind: "skinfold" },
+  { key: "pant_dobra", label: "Dobra de panturrilha medial (mm)", kind: "skinfold" },
+  { key: "torax", label: "Perímetro de tórax (cm)", kind: "perimeter" },
+  { key: "braco_rel", label: "Perímetro de braço relaxado (cm)", kind: "perimeter" },
+  { key: "braco_flet", label: "Perímetro de braço contraído (cm)", kind: "perimeter" },
+  { key: "cintura", label: "Perímetro de cintura (cm)", kind: "perimeter" },
+  { key: "gluteo", label: "Perímetro de quadril (cm)", kind: "perimeter" },
+  { key: "coxa_media", label: "Perímetro de coxa média (cm)", kind: "perimeter" },
+  { key: "pant_perim", label: "Perímetro de panturrilha medial (cm)", kind: "perimeter" },
+] as const;
 
 function dateStamp(date = new Date()) {
   return date.toISOString().split("T")[0];
@@ -21,6 +49,60 @@ function styleHeader(worksheet: ExcelJS.Worksheet, color: string) {
     type: "pattern",
     pattern: "solid",
     fgColor: { argb: color },
+  };
+}
+
+function getEtmLimit(kind: MeasurementKind) {
+  return kind === "skinfold" ? SKINFOLD_ETM_LIMIT : PERIMETER_ETM_LIMIT;
+}
+
+function calculateMean(values: number[]) {
+  const validValues = values.filter(Number.isFinite);
+  if (validValues.length === 0) return Number.NaN;
+  return validValues.reduce((sum, value) => sum + value, 0) / validValues.length;
+}
+
+function calculateMax(values: number[]) {
+  const validValues = values.filter(Number.isFinite);
+  return validValues.length > 0 ? Math.max(...validValues) : Number.NaN;
+}
+
+function calculateEtmPercent(values: number[]) {
+  if (values.length < 2 || values.some((value) => !Number.isFinite(value))) {
+    return Number.NaN;
+  }
+
+  const mean = calculateMean(values);
+  if (!Number.isFinite(mean) || mean === 0) return Number.NaN;
+
+  const pairwiseDiffs: number[] = [];
+  for (let firstIndex = 0; firstIndex < values.length - 1; firstIndex++) {
+    for (let secondIndex = firstIndex + 1; secondIndex < values.length; secondIndex++) {
+      pairwiseDiffs.push(values[firstIndex] - values[secondIndex]);
+    }
+  }
+
+  const sumSquaredDiffs = pairwiseDiffs.reduce((sum, diff) => sum + diff ** 2, 0);
+  const etm = Math.sqrt(sumSquaredDiffs / (2 * pairwiseDiffs.length));
+  return (etm / Math.abs(mean)) * 100;
+}
+
+function formatNumber(value: number, fractionDigits = 2) {
+  return Number.isFinite(value) ? value.toFixed(fractionDigits) : "Pend.";
+}
+
+function getFpmStats(rightMeasurements: number[], leftMeasurements: number[]) {
+  const rightAverage = calculateMean(rightMeasurements);
+  const leftAverage = calculateMean(leftMeasurements);
+  const rightMax = calculateMax(rightMeasurements);
+  const leftMax = calculateMax(leftMeasurements);
+
+  return {
+    rightAverage,
+    leftAverage,
+    rightMax,
+    leftMax,
+    totalMax: calculateMax([rightMax, leftMax]),
   };
 }
 
@@ -43,6 +125,7 @@ export default function Home() {
     panturrilha: [] as number[],
   });
   const [antropoInputs, setAntropoInputs] = useState({ braco: "", cintura: "", panturrilha: "" });
+  const [antropoReview, setAntropoReview] = useState(false);
 
   // FPM state
   const [fpmRound, setFpmRound] = useState(1);
@@ -58,6 +141,7 @@ export default function Home() {
   const [isakRound, setIsakRound] = useState(1);
   const [isakData, setIsakData] = useState<Record<string, number[]>>({});
   const [isakInputs, setIsakInputs] = useState<Record<string, string>>({});
+  const [isakReview, setIsakReview] = useState(false);
 
   // Mutations
   const saveAntropoMutation = trpc.evaluations.saveAntropometria.useMutation();
@@ -155,6 +239,21 @@ export default function Home() {
     });
 
     styleHeader(worksheet, "FF70AD47");
+    const stats = getFpmStats(data.rightMeasurements, data.leftMeasurements);
+    const summaryWorksheet = workbook.addWorksheet("Resumo FPM");
+    summaryWorksheet.columns = [
+      { header: "Indicador", key: "metric", width: 34 },
+      { header: "Valor (kgf)", key: "value", width: 16 },
+    ];
+    summaryWorksheet.addRows([
+      { metric: "Força média - lado direito", value: stats.rightAverage },
+      { metric: "Força média - lado esquerdo", value: stats.leftAverage },
+      { metric: "Força máxima - lado direito", value: stats.rightMax },
+      { metric: "Força máxima - lado esquerdo", value: stats.leftMax },
+      { metric: "Força máxima total", value: stats.totalMax },
+    ]);
+    styleHeader(summaryWorksheet, "FF70AD47");
+
     await downloadWorkbook(workbook, `fpm_${safeFilenamePart(data.participantId)}_${dateStamp()}.xlsx`);
   };
 
@@ -191,26 +290,6 @@ export default function Home() {
     await downloadWorkbook(workbook, `isak_${safeFilenamePart(data.participantId)}_${dateStamp()}.xlsx`);
   };
 
-  const isakFields = [
-    // Dobras
-    { key: "subscap", label: "Dobra subescapular (mm)" },
-    { key: "triceps", label: "Dobra de tríceps (mm)" },
-    { key: "biceps", label: "Dobra de bíceps (mm)" },
-    { key: "iliaca", label: "Dobra de crista ilíaca (mm)" },
-    { key: "supraesp", label: "Dobra supraespinhal (mm)" },
-    { key: "abdom", label: "Dobra abdominal (mm)" },
-    { key: "coxa", label: "Dobra de coxa anterior (mm)" },
-    { key: "pant_dobra", label: "Dobra de panturrilha medial (mm)" },
-    // Perímetros
-    { key: "torax", label: "Perímetro de tórax (cm)" },
-    { key: "braco_rel", label: "Perímetro de braço relaxado (cm)" },
-    { key: "braco_flet", label: "Perímetro de braço contraído (cm)" },
-    { key: "cintura", label: "Perímetro de cintura (cm)" },
-    { key: "gluteo", label: "Perímetro de quadril (cm)" },
-    { key: "coxa_media", label: "Perímetro de coxa média (cm)" },
-    { key: "pant_perim", label: "Perímetro de panturrilha medial (cm)" },
-  ];
-
   // Proteção contra atualização de página sem salvar
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -231,6 +310,181 @@ export default function Home() {
       setHasUnsavedChanges(true);
     }
   }, [activeApp, participantId, date, antropoInputs, fpmInputs, fpmDominantHand, fpmBestLeg, isakInputs]);
+
+  const antropoEtmRows = antropoFields.map((field) => {
+    const values = antropoData[field.key];
+    const etmPercent = calculateEtmPercent(values);
+    const limit = getEtmLimit(field.kind);
+    return {
+      key: field.key,
+      label: field.label,
+      values,
+      etmPercent,
+      limit,
+      isValid: Number.isFinite(etmPercent) && etmPercent < limit,
+    };
+  });
+
+  const isakEtmRows = isakFields.map((field) => {
+    const values = isakData[field.key] ?? [];
+    const etmPercent = calculateEtmPercent(values);
+    const limit = getEtmLimit(field.kind);
+    return {
+      key: field.key,
+      label: field.label,
+      values,
+      etmPercent,
+      limit,
+      isValid: Number.isFinite(etmPercent) && etmPercent < limit,
+    };
+  });
+
+  const antropoHasInvalidEtm = antropoEtmRows.some((row) => !row.isValid);
+  const isakHasInvalidEtm = isakEtmRows.some((row) => !row.isValid);
+
+  const resetAntropo = () => {
+    setAntropoRound(1);
+    setAntropoData({ braco: [], cintura: [], panturrilha: [] });
+    setAntropoInputs({ braco: "", cintura: "", panturrilha: "" });
+    setAntropoReview(false);
+  };
+
+  const resetFpm = () => {
+    setFpmRound(1);
+    setFpmData({ right: [], left: [] });
+    setFpmInputs({ right: "", left: "" });
+    setFpmDominantHand("");
+    setFpmBestLeg("");
+  };
+
+  const resetIsak = () => {
+    setIsakRound(1);
+    setIsakData({});
+    setIsakInputs({});
+    setIsakReview(false);
+  };
+
+  const resetParticipant = () => {
+    setParticipantId("");
+    setDate(new Date().toISOString().split("T")[0]);
+  };
+
+  const resetAfterSave = (app: "antropo" | "fpm" | "isak") => {
+    setHasUnsavedChanges(false);
+    setActiveApp("home");
+    if (app === "antropo") resetAntropo();
+    if (app === "fpm") resetFpm();
+    if (app === "isak") resetIsak();
+    resetParticipant();
+  };
+
+  const updateAntropoReviewValue = (
+    key: (typeof antropoFields)[number]["key"],
+    index: number,
+    value: string
+  ) => {
+    const nextValue = value === "" ? Number.NaN : Number(value);
+    setAntropoData((current) => ({
+      ...current,
+      [key]: current[key].map((measurement, measurementIndex) =>
+        measurementIndex === index ? nextValue : measurement
+      ),
+    }));
+  };
+
+  const updateIsakReviewValue = (key: string, index: number, value: string) => {
+    const nextValue = value === "" ? Number.NaN : Number(value);
+    setIsakData((current) => ({
+      ...current,
+      [key]: (current[key] ?? []).map((measurement, measurementIndex) =>
+        measurementIndex === index ? nextValue : measurement
+      ),
+    }));
+  };
+
+  const saveAntropoEvaluation = async (data = antropoData) => {
+    const payload = {
+      participantId,
+      date,
+      bracoMeasurements: data.braco,
+      cinturaMeasurements: data.cintura,
+      panturrilhaMeasurements: data.panturrilha,
+    };
+
+    try {
+      if (isStaticPages) {
+        await generateLocalAntropoExcel(payload);
+      } else {
+        const result = await saveAntropoMutation.mutateAsync({
+          ...payload,
+          date: new Date(payload.date),
+        });
+
+        downloadExcel(result);
+      }
+
+      toast.success(isStaticPages ? "Antropometria salva em Excel!" : "Antropometria salva com Excel local e online!");
+      resetAfterSave("antropo");
+    } catch (error) {
+      try {
+        await generateLocalAntropoExcel(payload);
+        toast.success("Antropometria salva em Excel!");
+        resetAfterSave("antropo");
+      } catch {
+        toast.error("Erro ao gerar Excel de antropometria");
+      }
+    }
+  };
+
+  const saveIsakEvaluation = async (data = isakData) => {
+    const payload = {
+      participantId,
+      date,
+      measurements: data,
+    };
+
+    try {
+      if (isStaticPages) {
+        await generateLocalIsakExcel(payload);
+      } else {
+        const result = await saveIsakMutation.mutateAsync({
+          ...payload,
+          date: new Date(payload.date),
+        });
+
+        downloadExcel(result);
+      }
+
+      toast.success(isStaticPages ? "ISAK salva em Excel!" : "ISAK salva com Excel local e online!");
+      resetAfterSave("isak");
+    } catch (error) {
+      try {
+        await generateLocalIsakExcel(payload);
+        toast.success("ISAK salva em Excel!");
+        resetAfterSave("isak");
+      } catch {
+        toast.error("Erro ao gerar Excel ISAK");
+      }
+    }
+  };
+
+  const handleSaveAntropoReview = async () => {
+    if (antropoHasInvalidEtm) {
+      toast.error("Ajuste as medidas até todos os ETMs ficarem abaixo de 1%");
+      return;
+    }
+
+    await saveAntropoEvaluation();
+  };
+
+  const handleSaveIsakReview = async () => {
+    if (isakHasInvalidEtm) {
+      toast.error("Ajuste as medidas até os ETMs ficarem abaixo dos limites");
+      return;
+    }
+
+    await saveIsakEvaluation();
+  };
 
   const handleAntropoRound = async () => {
     if (!participantId.trim()) {
@@ -260,56 +514,10 @@ export default function Home() {
       setAntropoInputs({ braco: "", cintura: "", panturrilha: "" });
       toast.success(`Rodada ${antropoRound} salva! Próxima rodada...`);
     } else {
-      // Salvar no banco de dados
-      try {
-        const payload = {
-          participantId,
-          date,
-          bracoMeasurements: newData.braco,
-          cinturaMeasurements: newData.cintura,
-          panturrilhaMeasurements: newData.panturrilha,
-        };
-
-        if (isStaticPages) {
-          await generateLocalAntropoExcel(payload);
-        } else {
-          const result = await saveAntropoMutation.mutateAsync({
-            ...payload,
-            date: new Date(payload.date),
-          });
-
-          downloadExcel(result);
-        }
-
-        toast.success(isStaticPages ? "Antropometria salva em Excel!" : "Antropometria salva com Excel local e online!");
-        setHasUnsavedChanges(false);
-        setActiveApp("home");
-        setAntropoRound(1);
-        setAntropoData({ braco: [], cintura: [], panturrilha: [] });
-        setAntropoInputs({ braco: "", cintura: "", panturrilha: "" });
-        setParticipantId("");
-        setDate(new Date().toISOString().split("T")[0]);
-      } catch (error) {
-        try {
-          await generateLocalAntropoExcel({
-            participantId,
-            date,
-            bracoMeasurements: newData.braco,
-            cinturaMeasurements: newData.cintura,
-            panturrilhaMeasurements: newData.panturrilha,
-          });
-          toast.success("Antropometria salva em Excel!");
-          setHasUnsavedChanges(false);
-          setActiveApp("home");
-          setAntropoRound(1);
-          setAntropoData({ braco: [], cintura: [], panturrilha: [] });
-          setAntropoInputs({ braco: "", cintura: "", panturrilha: "" });
-          setParticipantId("");
-          setDate(new Date().toISOString().split("T")[0]);
-        } catch {
-          toast.error("Erro ao gerar Excel de antropometria");
-        }
-      }
+      setAntropoData(newData);
+      setAntropoInputs({ braco: "", cintura: "", panturrilha: "" });
+      setAntropoReview(true);
+      toast.success("Revise o ETM antes de salvar");
     }
   };
 
@@ -438,51 +646,10 @@ export default function Home() {
       setIsakInputs({});
       toast.success(`Rodada ${isakRound} salva! Próxima rodada...`);
     } else {
-      try {
-        const payload = {
-          participantId,
-          date,
-          measurements: newData,
-        };
-
-        if (isStaticPages) {
-          await generateLocalIsakExcel(payload);
-        } else {
-          const result = await saveIsakMutation.mutateAsync({
-            ...payload,
-            date: new Date(payload.date),
-          });
-
-          downloadExcel(result);
-        }
-
-        toast.success(isStaticPages ? "ISAK salva em Excel!" : "ISAK salva com Excel local e online!");
-        setHasUnsavedChanges(false);
-        setActiveApp("home");
-        setIsakRound(1);
-        setIsakData({});
-        setIsakInputs({});
-        setParticipantId("");
-        setDate(new Date().toISOString().split("T")[0]);
-      } catch (error) {
-        try {
-          await generateLocalIsakExcel({
-            participantId,
-            date,
-            measurements: newData,
-          });
-          toast.success("ISAK salva em Excel!");
-          setHasUnsavedChanges(false);
-          setActiveApp("home");
-          setIsakRound(1);
-          setIsakData({});
-          setIsakInputs({});
-          setParticipantId("");
-          setDate(new Date().toISOString().split("T")[0]);
-        } catch {
-          toast.error("Erro ao gerar Excel ISAK");
-        }
-      }
+      setIsakData(newData);
+      setIsakInputs({});
+      setIsakReview(true);
+      toast.success("Revise o ETM antes de salvar");
     }
   };
 
@@ -494,6 +661,7 @@ export default function Home() {
         setAntropoRound(1);
         setAntropoData({ braco: [], cintura: [], panturrilha: [] });
         setAntropoInputs({ braco: "", cintura: "", panturrilha: "" });
+        setAntropoReview(false);
         setFpmRound(1);
         setFpmData({ right: [], left: [] });
         setFpmInputs({ right: "", left: "" });
@@ -502,6 +670,7 @@ export default function Home() {
         setIsakRound(1);
         setIsakData({});
         setIsakInputs({});
+        setIsakReview(false);
         setParticipantId("");
         setDate(new Date().toISOString().split("T")[0]);
       }
@@ -546,8 +715,8 @@ export default function Home() {
               <Button
                 onClick={() => {
                   setActiveApp("antropo");
-                  setParticipantId("");
-                  setDate(new Date().toISOString().split("T")[0]);
+                  resetAntropo();
+                  resetParticipant();
                 }}
                 className="h-32 text-lg"
               >
@@ -556,8 +725,8 @@ export default function Home() {
               <Button
                 onClick={() => {
                   setActiveApp("fpm");
-                  setParticipantId("");
-                  setDate(new Date().toISOString().split("T")[0]);
+                  resetFpm();
+                  resetParticipant();
                 }}
                 className="h-32 text-lg"
               >
@@ -566,8 +735,8 @@ export default function Home() {
               <Button
                 onClick={() => {
                   setActiveApp("isak");
-                  setParticipantId("");
-                  setDate(new Date().toISOString().split("T")[0]);
+                  resetIsak();
+                  resetParticipant();
                 }}
                 className="h-32 text-lg"
               >
@@ -594,7 +763,7 @@ export default function Home() {
                 onChange={(e) => setDate(e.target.value)}
                 className="w-full border rounded p-2"
               />
-              {antropoRound <= 3 && (
+              {!antropoReview && antropoRound <= 3 && (
                 <>
                   <h3 className="font-semibold">Rodada {antropoRound} de 3</h3>
                   <div className="bg-blue-50 p-3 rounded text-sm text-blue-800">
@@ -629,7 +798,62 @@ export default function Home() {
                       Cancelar
                     </Button>
                     <Button onClick={handleAntropoRound} disabled={saveAntropoMutation.isPending}>
-                      {antropoRound === 3 ? "Finalizar e Salvar" : "Próxima Rodada"}
+                      {antropoRound === 3 ? "Revisar ETM" : "Próxima Rodada"}
+                    </Button>
+                  </div>
+                </>
+              )}
+              {antropoReview && (
+                <>
+                  <h3 className="font-semibold">Revisão do ETM</h3>
+                  <div className="overflow-x-auto border rounded">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-100">
+                        <tr>
+                          <th className="text-left p-2">Medida</th>
+                          <th className="text-left p-2">Rodada 1</th>
+                          <th className="text-left p-2">Rodada 2</th>
+                          <th className="text-left p-2">Rodada 3</th>
+                          <th className="text-left p-2">ETM</th>
+                          <th className="text-left p-2">Critério</th>
+                          <th className="text-left p-2">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {antropoEtmRows.map((row) => (
+                          <tr key={row.key} className="border-t">
+                            <td className="p-2 font-medium">{row.label}</td>
+                            {row.values.map((value, index) => (
+                              <td key={`${row.key}-${index}`} className="p-2 min-w-28">
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  value={Number.isFinite(value) ? value : ""}
+                                  onChange={(event) => updateAntropoReviewValue(row.key, index, event.target.value)}
+                                  className="w-24 border rounded p-2"
+                                  aria-label={`${row.label} rodada ${index + 1}`}
+                                />
+                              </td>
+                            ))}
+                            <td className="p-2">{formatNumber(row.etmPercent)}%</td>
+                            <td className="p-2">&lt; {row.limit}%</td>
+                            <td className={`p-2 font-semibold ${row.isValid ? "text-green-700" : "text-red-700"}`}>
+                              {row.isValid ? "OK" : "Ajustar"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="flex gap-4">
+                    <Button variant="outline" onClick={handleCancel}>
+                      Cancelar
+                    </Button>
+                    <Button
+                      onClick={handleSaveAntropoReview}
+                      disabled={saveAntropoMutation.isPending || antropoHasInvalidEtm}
+                    >
+                      Salvar avaliação
                     </Button>
                   </div>
                 </>
@@ -726,7 +950,7 @@ export default function Home() {
                 onChange={(e) => setDate(e.target.value)}
                 className="w-full border rounded p-2"
               />
-              {isakRound <= 3 && (
+              {!isakReview && isakRound <= 3 && (
                 <>
                   <h3 className="font-semibold">Rodada {isakRound} de 3</h3>
                   <div className="bg-blue-50 p-3 rounded text-sm text-blue-800">
@@ -750,7 +974,62 @@ export default function Home() {
                       Cancelar
                     </Button>
                     <Button onClick={handleIsakRound} disabled={saveIsakMutation.isPending}>
-                      {isakRound === 3 ? "Finalizar e Salvar" : "Próxima Rodada"}
+                      {isakRound === 3 ? "Revisar ETM" : "Próxima Rodada"}
+                    </Button>
+                  </div>
+                </>
+              )}
+              {isakReview && (
+                <>
+                  <h3 className="font-semibold">Revisão do ETM</h3>
+                  <div className="overflow-x-auto border rounded">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-100">
+                        <tr>
+                          <th className="text-left p-2">Medida</th>
+                          <th className="text-left p-2">Rodada 1</th>
+                          <th className="text-left p-2">Rodada 2</th>
+                          <th className="text-left p-2">Rodada 3</th>
+                          <th className="text-left p-2">ETM</th>
+                          <th className="text-left p-2">Critério</th>
+                          <th className="text-left p-2">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {isakEtmRows.map((row) => (
+                          <tr key={row.key} className="border-t">
+                            <td className="p-2 font-medium min-w-56">{row.label}</td>
+                            {row.values.map((value, index) => (
+                              <td key={`${row.key}-${index}`} className="p-2 min-w-28">
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  value={Number.isFinite(value) ? value : ""}
+                                  onChange={(event) => updateIsakReviewValue(row.key, index, event.target.value)}
+                                  className="w-24 border rounded p-2"
+                                  aria-label={`${row.label} rodada ${index + 1}`}
+                                />
+                              </td>
+                            ))}
+                            <td className="p-2">{formatNumber(row.etmPercent)}%</td>
+                            <td className="p-2">&lt; {row.limit}%</td>
+                            <td className={`p-2 font-semibold ${row.isValid ? "text-green-700" : "text-red-700"}`}>
+                              {row.isValid ? "OK" : "Ajustar"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="flex gap-4">
+                    <Button variant="outline" onClick={handleCancel}>
+                      Cancelar
+                    </Button>
+                    <Button
+                      onClick={handleSaveIsakReview}
+                      disabled={saveIsakMutation.isPending || isakHasInvalidEtm}
+                    >
+                      Salvar avaliação
                     </Button>
                   </div>
                 </>

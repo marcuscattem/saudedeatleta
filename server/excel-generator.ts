@@ -1,6 +1,41 @@
 import ExcelJS from "exceljs";
 import { Antropometria, FpmEvaluation, IsakEvaluation } from "../drizzle/schema";
 
+function calculateMean(values: number[]) {
+  const validValues = values.filter(Number.isFinite);
+  if (validValues.length === 0) return Number.NaN;
+  return validValues.reduce((sum, value) => sum + value, 0) / validValues.length;
+}
+
+function calculateMax(values: number[]) {
+  const validValues = values.filter(Number.isFinite);
+  return validValues.length > 0 ? Math.max(...validValues) : Number.NaN;
+}
+
+function getFpmStats(rightMeasurements: number[], leftMeasurements: number[]) {
+  const rightAverage = calculateMean(rightMeasurements);
+  const leftAverage = calculateMean(leftMeasurements);
+  const rightMax = calculateMax(rightMeasurements);
+  const leftMax = calculateMax(leftMeasurements);
+
+  return {
+    rightAverage,
+    leftAverage,
+    rightMax,
+    leftMax,
+    totalMax: calculateMax([rightMax, leftMax]),
+  };
+}
+
+function styleHeader(worksheet: ExcelJS.Worksheet, color: string) {
+  worksheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+  worksheet.getRow(1).fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: color },
+  };
+}
+
 export async function generateAntropometriaExcel(data: Antropometria): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet("Antropometria");
@@ -73,13 +108,22 @@ export async function generateFpmExcel(data: FpmEvaluation): Promise<Buffer> {
     });
   }
 
-  worksheet.getRow(1).font = { bold: true };
-  worksheet.getRow(1).fill = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: "FF70AD47" },
-  };
-  worksheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+  styleHeader(worksheet, "FF70AD47");
+
+  const stats = getFpmStats(rightMeasurements, leftMeasurements);
+  const summaryWorksheet = workbook.addWorksheet("Resumo FPM");
+  summaryWorksheet.columns = [
+    { header: "Indicador", key: "metric", width: 34 },
+    { header: "Valor (kgf)", key: "value", width: 16 },
+  ];
+  summaryWorksheet.addRows([
+    { metric: "Força média - lado direito", value: stats.rightAverage },
+    { metric: "Força média - lado esquerdo", value: stats.leftAverage },
+    { metric: "Força máxima - lado direito", value: stats.rightMax },
+    { metric: "Força máxima - lado esquerdo", value: stats.leftMax },
+    { metric: "Força máxima total", value: stats.totalMax },
+  ]);
+  styleHeader(summaryWorksheet, "FF70AD47");
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);

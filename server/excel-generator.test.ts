@@ -53,6 +53,38 @@ describe("Excel Generator", () => {
       expect(buffer[0]).toBe(0x50); // 'P'
       expect(buffer[1]).toBe(0x4b); // 'K'
     });
+
+    it("should include FPM summary statistics", async () => {
+      const mockData: FpmEvaluation = {
+        id: 1,
+        userId: 1,
+        participantId: "P001",
+        date: new Date(),
+        dominantHand: "Direita",
+        bestLeg: "Direita",
+        rightMeasurements: JSON.stringify([45.0, 45.5, 44.5]),
+        leftMeasurements: JSON.stringify([42.0, 42.5, 41.5]),
+        excelUrl: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const buffer = await generateFpmExcel(mockData);
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer);
+      const worksheet = workbook.getWorksheet("Resumo FPM");
+
+      expect(worksheet?.getCell("A2").value).toBe("Força média - lado direito");
+      expect(worksheet?.getCell("B2").value).toBe(45);
+      expect(worksheet?.getCell("A3").value).toBe("Força média - lado esquerdo");
+      expect(worksheet?.getCell("B3").value).toBe(42);
+      expect(worksheet?.getCell("A4").value).toBe("Força máxima - lado direito");
+      expect(worksheet?.getCell("B4").value).toBe(45.5);
+      expect(worksheet?.getCell("A5").value).toBe("Força máxima - lado esquerdo");
+      expect(worksheet?.getCell("B5").value).toBe(42.5);
+      expect(worksheet?.getCell("A6").value).toBe("Força máxima total");
+      expect(worksheet?.getCell("B6").value).toBe(45.5);
+    });
   });
 
   describe("generateIsakExcel", () => {
