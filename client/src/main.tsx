@@ -13,6 +13,12 @@ const queryClient = new QueryClient();
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
   if (typeof window === "undefined") return;
+  if (
+    import.meta.env.BASE_URL === "/saudedeatleta/" ||
+    window.location.hostname.endsWith("github.io")
+  ) {
+    return;
+  }
 
   const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
 

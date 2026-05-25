@@ -1,11 +1,35 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
+import ExcelJS from "exceljs";
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 
+const EXCEL_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+function dateStamp(date = new Date()) {
+  return date.toISOString().split("T")[0];
+}
+
+function safeFilenamePart(value: string) {
+  return value.trim().replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "participante";
+}
+
+function styleHeader(worksheet: ExcelJS.Worksheet, color: string) {
+  worksheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+  worksheet.getRow(1).fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: color },
+  };
+}
+
 export default function Home() {
   const { user, isAuthenticated } = useAuth();
+  const isStaticPages =
+    import.meta.env.BASE_URL === "/saudedeatleta/" ||
+    (typeof window !== "undefined" && window.location.hostname.endsWith("github.io"));
+  const canUseApp = isAuthenticated || isStaticPages;
   const [activeApp, setActiveApp] = useState("home");
   const [participantId, setParticipantId] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
@@ -47,6 +71,124 @@ export default function Home() {
     document.body.appendChild(link);
     link.click();
     link.remove();
+  };
+
+  const downloadWorkbook = async (workbook: ExcelJS.Workbook, filename: string) => {
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer as BlobPart], { type: EXCEL_CONTENT_TYPE });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const generateLocalAntropoExcel = async (data: {
+    participantId: string;
+    date: string;
+    bracoMeasurements: number[];
+    cinturaMeasurements: number[];
+    panturrilhaMeasurements: number[];
+  }) => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Antropometria");
+    worksheet.columns = [
+      { header: "ID Participante", key: "participantId", width: 15 },
+      { header: "Data", key: "date", width: 15 },
+      { header: "Rodada", key: "round", width: 10 },
+      { header: "Braço (cm)", key: "braco", width: 15 },
+      { header: "Cintura (cm)", key: "cintura", width: 15 },
+      { header: "Panturrilha (cm)", key: "panturrilha", width: 15 },
+    ];
+
+    data.bracoMeasurements.forEach((braco, index) => {
+      worksheet.addRow({
+        participantId: data.participantId,
+        date: new Date(data.date).toLocaleDateString("pt-BR"),
+        round: index + 1,
+        braco,
+        cintura: data.cinturaMeasurements[index],
+        panturrilha: data.panturrilhaMeasurements[index],
+      });
+    });
+
+    styleHeader(worksheet, "FF4472C4");
+    await downloadWorkbook(
+      workbook,
+      `antropometria_${safeFilenamePart(data.participantId)}_${dateStamp()}.xlsx`,
+    );
+  };
+
+  const generateLocalFpmExcel = async (data: {
+    participantId: string;
+    date: string;
+    dominantHand: string;
+    bestLeg: string;
+    rightMeasurements: number[];
+    leftMeasurements: number[];
+  }) => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("FPM");
+    worksheet.columns = [
+      { header: "ID Participante", key: "participantId", width: 15 },
+      { header: "Data", key: "date", width: 15 },
+      { header: "Mão Dominante", key: "dominantHand", width: 15 },
+      { header: "Perna Melhor", key: "bestLeg", width: 15 },
+      { header: "Medida", key: "round", width: 10 },
+      { header: "Lado Direito (kgf)", key: "right", width: 15 },
+      { header: "Lado Esquerdo (kgf)", key: "left", width: 15 },
+    ];
+
+    data.rightMeasurements.forEach((right, index) => {
+      worksheet.addRow({
+        participantId: data.participantId,
+        date: new Date(data.date).toLocaleDateString("pt-BR"),
+        dominantHand: data.dominantHand,
+        bestLeg: data.bestLeg,
+        round: index + 1,
+        right,
+        left: data.leftMeasurements[index],
+      });
+    });
+
+    styleHeader(worksheet, "FF70AD47");
+    await downloadWorkbook(workbook, `fpm_${safeFilenamePart(data.participantId)}_${dateStamp()}.xlsx`);
+  };
+
+  const generateLocalIsakExcel = async (data: {
+    participantId: string;
+    date: string;
+    measurements: Record<string, number[]>;
+  }) => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("ISAK");
+    worksheet.columns = [
+      { header: "ID Participante", key: "participantId", width: 15 },
+      { header: "Data", key: "date", width: 15 },
+      { header: "Rodada", key: "round", width: 10 },
+      ...isakFields.map((field) => ({ header: field.label, key: field.key, width: 18 })),
+    ];
+
+    const numRounds = data.measurements[isakFields[0].key]?.length || 0;
+    for (let round = 0; round < numRounds; round++) {
+      const row: Record<string, unknown> = {
+        participantId: data.participantId,
+        date: new Date(data.date).toLocaleDateString("pt-BR"),
+        round: round + 1,
+      };
+
+      isakFields.forEach((field) => {
+        row[field.key] = data.measurements[field.key]?.[round];
+      });
+
+      worksheet.addRow(row);
+    }
+
+    styleHeader(worksheet, "FFC00000");
+    await downloadWorkbook(workbook, `isak_${safeFilenamePart(data.participantId)}_${dateStamp()}.xlsx`);
   };
 
   const isakFields = [
@@ -120,17 +262,26 @@ export default function Home() {
     } else {
       // Salvar no banco de dados
       try {
-        const result = await saveAntropoMutation.mutateAsync({
+        const payload = {
           participantId,
-          date: new Date(date),
+          date,
           bracoMeasurements: newData.braco,
           cinturaMeasurements: newData.cintura,
           panturrilhaMeasurements: newData.panturrilha,
-        });
+        };
 
-        downloadExcel(result);
+        if (isStaticPages) {
+          await generateLocalAntropoExcel(payload);
+        } else {
+          const result = await saveAntropoMutation.mutateAsync({
+            ...payload,
+            date: new Date(payload.date),
+          });
 
-        toast.success("Antropometria salva com Excel local e online!");
+          downloadExcel(result);
+        }
+
+        toast.success(isStaticPages ? "Antropometria salva em Excel!" : "Antropometria salva com Excel local e online!");
         setHasUnsavedChanges(false);
         setActiveApp("home");
         setAntropoRound(1);
@@ -139,7 +290,25 @@ export default function Home() {
         setParticipantId("");
         setDate(new Date().toISOString().split("T")[0]);
       } catch (error) {
-        toast.error("Erro ao salvar antropometria e Excel");
+        try {
+          await generateLocalAntropoExcel({
+            participantId,
+            date,
+            bracoMeasurements: newData.braco,
+            cinturaMeasurements: newData.cintura,
+            panturrilhaMeasurements: newData.panturrilha,
+          });
+          toast.success("Antropometria salva em Excel!");
+          setHasUnsavedChanges(false);
+          setActiveApp("home");
+          setAntropoRound(1);
+          setAntropoData({ braco: [], cintura: [], panturrilha: [] });
+          setAntropoInputs({ braco: "", cintura: "", panturrilha: "" });
+          setParticipantId("");
+          setDate(new Date().toISOString().split("T")[0]);
+        } catch {
+          toast.error("Erro ao gerar Excel de antropometria");
+        }
       }
     }
   };
@@ -181,18 +350,27 @@ export default function Home() {
       toast.success(`Medida ${fpmRound} salva! Próxima medida...`);
     } else {
       try {
-        const result = await saveFpmMutation.mutateAsync({
+        const payload = {
           participantId,
-          date: new Date(date),
+          date,
           dominantHand: fpmDominantHand,
           bestLeg: fpmBestLeg,
           rightMeasurements: newData.right,
           leftMeasurements: newData.left,
-        });
+        };
 
-        downloadExcel(result);
+        if (isStaticPages) {
+          await generateLocalFpmExcel(payload);
+        } else {
+          const result = await saveFpmMutation.mutateAsync({
+            ...payload,
+            date: new Date(payload.date),
+          });
 
-        toast.success("FPM salva com Excel local e online!");
+          downloadExcel(result);
+        }
+
+        toast.success(isStaticPages ? "FPM salva em Excel!" : "FPM salva com Excel local e online!");
         setHasUnsavedChanges(false);
         setActiveApp("home");
         setFpmRound(1);
@@ -203,7 +381,28 @@ export default function Home() {
         setParticipantId("");
         setDate(new Date().toISOString().split("T")[0]);
       } catch (error) {
-        toast.error("Erro ao salvar FPM e Excel");
+        try {
+          await generateLocalFpmExcel({
+            participantId,
+            date,
+            dominantHand: fpmDominantHand,
+            bestLeg: fpmBestLeg,
+            rightMeasurements: newData.right,
+            leftMeasurements: newData.left,
+          });
+          toast.success("FPM salva em Excel!");
+          setHasUnsavedChanges(false);
+          setActiveApp("home");
+          setFpmRound(1);
+          setFpmData({ right: [], left: [] });
+          setFpmInputs({ right: "", left: "" });
+          setFpmDominantHand("");
+          setFpmBestLeg("");
+          setParticipantId("");
+          setDate(new Date().toISOString().split("T")[0]);
+        } catch {
+          toast.error("Erro ao gerar Excel de FPM");
+        }
       }
     }
   };
@@ -240,15 +439,24 @@ export default function Home() {
       toast.success(`Rodada ${isakRound} salva! Próxima rodada...`);
     } else {
       try {
-        const result = await saveIsakMutation.mutateAsync({
+        const payload = {
           participantId,
-          date: new Date(date),
+          date,
           measurements: newData,
-        });
+        };
 
-        downloadExcel(result);
+        if (isStaticPages) {
+          await generateLocalIsakExcel(payload);
+        } else {
+          const result = await saveIsakMutation.mutateAsync({
+            ...payload,
+            date: new Date(payload.date),
+          });
 
-        toast.success("ISAK salva com Excel local e online!");
+          downloadExcel(result);
+        }
+
+        toast.success(isStaticPages ? "ISAK salva em Excel!" : "ISAK salva com Excel local e online!");
         setHasUnsavedChanges(false);
         setActiveApp("home");
         setIsakRound(1);
@@ -257,7 +465,23 @@ export default function Home() {
         setParticipantId("");
         setDate(new Date().toISOString().split("T")[0]);
       } catch (error) {
-        toast.error("Erro ao salvar ISAK e Excel");
+        try {
+          await generateLocalIsakExcel({
+            participantId,
+            date,
+            measurements: newData,
+          });
+          toast.success("ISAK salva em Excel!");
+          setHasUnsavedChanges(false);
+          setActiveApp("home");
+          setIsakRound(1);
+          setIsakData({});
+          setIsakInputs({});
+          setParticipantId("");
+          setDate(new Date().toISOString().split("T")[0]);
+        } catch {
+          toast.error("Erro ao gerar Excel ISAK");
+        }
       }
     }
   };
@@ -286,7 +510,7 @@ export default function Home() {
     }
   };
 
-  if (!isAuthenticated) {
+  if (!canUseApp) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">
@@ -309,7 +533,7 @@ export default function Home() {
             {hasUnsavedChanges && activeApp !== "home" && (
               <span className="text-yellow-300 text-sm font-semibold">● Alterações não salvas</span>
             )}
-            <div className="text-sm">{user?.name}</div>
+            <div className="text-sm">{user?.name ?? (isStaticPages ? "Modo público" : "")}</div>
           </div>
         </div>
       </header>

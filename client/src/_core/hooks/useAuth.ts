@@ -9,11 +9,14 @@ type UseAuthOptions = {
 };
 
 export function useAuth(options?: UseAuthOptions) {
-  const { redirectOnUnauthenticated = false, redirectPath = getLoginUrl() } =
-    options ?? {};
+  const { redirectOnUnauthenticated = false, redirectPath } = options ?? {};
+  const isStaticPages =
+    import.meta.env.BASE_URL === "/saudedeatleta/" ||
+    (typeof window !== "undefined" && window.location.hostname.endsWith("github.io"));
   const utils = trpc.useUtils();
 
   const meQuery = trpc.auth.me.useQuery(undefined, {
+    enabled: !isStaticPages,
     retry: false,
     refetchOnWindowFocus: false,
   });
@@ -42,6 +45,32 @@ export function useAuth(options?: UseAuthOptions) {
   }, [logoutMutation, utils]);
 
   const state = useMemo(() => {
+    if (isStaticPages) {
+      const publicUser = {
+        id: 0,
+        name: "Modo público",
+        email: null,
+        openId: "github-pages",
+        loginMethod: "public",
+        role: "user" as const,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        lastSignedIn: new Date(),
+      };
+
+      localStorage.setItem(
+        "manus-runtime-user-info",
+        JSON.stringify(publicUser)
+      );
+
+      return {
+        user: publicUser,
+        loading: false,
+        error: null,
+        isAuthenticated: true,
+      };
+    }
+
     localStorage.setItem(
       "manus-runtime-user-info",
       JSON.stringify(meQuery.data)
@@ -56,6 +85,7 @@ export function useAuth(options?: UseAuthOptions) {
     meQuery.data,
     meQuery.error,
     meQuery.isLoading,
+    isStaticPages,
     logoutMutation.error,
     logoutMutation.isPending,
   ]);
@@ -65,9 +95,10 @@ export function useAuth(options?: UseAuthOptions) {
     if (meQuery.isLoading || logoutMutation.isPending) return;
     if (state.user) return;
     if (typeof window === "undefined") return;
-    if (window.location.pathname === redirectPath) return;
+    const targetPath = redirectPath ?? getLoginUrl();
+    if (window.location.pathname === targetPath) return;
 
-    window.location.href = redirectPath
+    window.location.href = targetPath
   }, [
     redirectOnUnauthenticated,
     redirectPath,
