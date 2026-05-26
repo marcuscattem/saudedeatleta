@@ -126,6 +126,7 @@ export default function Home() {
   });
   const [antropoInputs, setAntropoInputs] = useState({ braco: "", cintura: "", panturrilha: "" });
   const [antropoReview, setAntropoReview] = useState(false);
+  const [antropoEtmOverrideConfirmed, setAntropoEtmOverrideConfirmed] = useState(false);
 
   // FPM state
   const [fpmRound, setFpmRound] = useState(1);
@@ -142,6 +143,7 @@ export default function Home() {
   const [isakData, setIsakData] = useState<Record<string, number[]>>({});
   const [isakInputs, setIsakInputs] = useState<Record<string, string>>({});
   const [isakReview, setIsakReview] = useState(false);
+  const [isakEtmOverrideConfirmed, setIsakEtmOverrideConfirmed] = useState(false);
 
   // Mutations
   const saveAntropoMutation = trpc.evaluations.saveAntropometria.useMutation();
@@ -347,6 +349,7 @@ export default function Home() {
     setAntropoData({ braco: [], cintura: [], panturrilha: [] });
     setAntropoInputs({ braco: "", cintura: "", panturrilha: "" });
     setAntropoReview(false);
+    setAntropoEtmOverrideConfirmed(false);
   };
 
   const resetFpm = () => {
@@ -362,6 +365,7 @@ export default function Home() {
     setIsakData({});
     setIsakInputs({});
     setIsakReview(false);
+    setIsakEtmOverrideConfirmed(false);
   };
 
   const resetParticipant = () => {
@@ -384,6 +388,7 @@ export default function Home() {
     value: string
   ) => {
     const nextValue = value === "" ? Number.NaN : Number(value);
+    setAntropoEtmOverrideConfirmed(false);
     setAntropoData((current) => ({
       ...current,
       [key]: current[key].map((measurement, measurementIndex) =>
@@ -394,6 +399,7 @@ export default function Home() {
 
   const updateIsakReviewValue = (key: string, index: number, value: string) => {
     const nextValue = value === "" ? Number.NaN : Number(value);
+    setIsakEtmOverrideConfirmed(false);
     setIsakData((current) => ({
       ...current,
       [key]: (current[key] ?? []).map((measurement, measurementIndex) =>
@@ -469,8 +475,8 @@ export default function Home() {
   };
 
   const handleSaveAntropoReview = async () => {
-    if (antropoHasInvalidEtm) {
-      toast.error("Ajuste as medidas até todos os ETMs ficarem abaixo de 1%");
+    if (antropoHasInvalidEtm && !antropoEtmOverrideConfirmed) {
+      toast.error("Marque a confirmação para salvar com ETM fora do alvo");
       return;
     }
 
@@ -478,8 +484,8 @@ export default function Home() {
   };
 
   const handleSaveIsakReview = async () => {
-    if (isakHasInvalidEtm) {
-      toast.error("Ajuste as medidas até os ETMs ficarem abaixo dos limites");
+    if (isakHasInvalidEtm && !isakEtmOverrideConfirmed) {
+      toast.error("Marque a confirmação para salvar com ETM fora do alvo");
       return;
     }
 
@@ -517,6 +523,7 @@ export default function Home() {
       setAntropoData(newData);
       setAntropoInputs({ braco: "", cintura: "", panturrilha: "" });
       setAntropoReview(true);
+      setAntropoEtmOverrideConfirmed(false);
       toast.success("Revise o ETM antes de salvar");
     }
   };
@@ -649,6 +656,7 @@ export default function Home() {
       setIsakData(newData);
       setIsakInputs({});
       setIsakReview(true);
+      setIsakEtmOverrideConfirmed(false);
       toast.success("Revise o ETM antes de salvar");
     }
   };
@@ -662,6 +670,7 @@ export default function Home() {
         setAntropoData({ braco: [], cintura: [], panturrilha: [] });
         setAntropoInputs({ braco: "", cintura: "", panturrilha: "" });
         setAntropoReview(false);
+        setAntropoEtmOverrideConfirmed(false);
         setFpmRound(1);
         setFpmData({ right: [], left: [] });
         setFpmInputs({ right: "", left: "" });
@@ -671,6 +680,7 @@ export default function Home() {
         setIsakData({});
         setIsakInputs({});
         setIsakReview(false);
+        setIsakEtmOverrideConfirmed(false);
         setParticipantId("");
         setDate(new Date().toISOString().split("T")[0]);
       }
@@ -845,13 +855,29 @@ export default function Home() {
                       </tbody>
                     </table>
                   </div>
+                  {antropoHasInvalidEtm && (
+                    <label className="flex items-start gap-3 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                      <input
+                        type="checkbox"
+                        checked={antropoEtmOverrideConfirmed}
+                        onChange={(event) => setAntropoEtmOverrideConfirmed(event.target.checked)}
+                        className="mt-1"
+                      />
+                      <span>
+                        Confirmo que desejo salvar esta avaliação mesmo com ETM fora do alvo.
+                      </span>
+                    </label>
+                  )}
                   <div className="flex gap-4">
                     <Button variant="outline" onClick={handleCancel}>
                       Cancelar
                     </Button>
                     <Button
                       onClick={handleSaveAntropoReview}
-                      disabled={saveAntropoMutation.isPending || antropoHasInvalidEtm}
+                      disabled={
+                        saveAntropoMutation.isPending ||
+                        (antropoHasInvalidEtm && !antropoEtmOverrideConfirmed)
+                      }
                     >
                       Salvar avaliação
                     </Button>
@@ -1021,13 +1047,29 @@ export default function Home() {
                       </tbody>
                     </table>
                   </div>
+                  {isakHasInvalidEtm && (
+                    <label className="flex items-start gap-3 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                      <input
+                        type="checkbox"
+                        checked={isakEtmOverrideConfirmed}
+                        onChange={(event) => setIsakEtmOverrideConfirmed(event.target.checked)}
+                        className="mt-1"
+                      />
+                      <span>
+                        Confirmo que desejo salvar esta avaliação mesmo com ETM fora do alvo.
+                      </span>
+                    </label>
+                  )}
                   <div className="flex gap-4">
                     <Button variant="outline" onClick={handleCancel}>
                       Cancelar
                     </Button>
                     <Button
                       onClick={handleSaveIsakReview}
-                      disabled={saveIsakMutation.isPending || isakHasInvalidEtm}
+                      disabled={
+                        saveIsakMutation.isPending ||
+                        (isakHasInvalidEtm && !isakEtmOverrideConfirmed)
+                      }
                     >
                       Salvar avaliação
                     </Button>
