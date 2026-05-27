@@ -149,6 +149,7 @@ export async function generateIsakExcel(data: IsakEvaluation): Promise<Buffer> {
     { key: "braco_rel", label: "Perímetro de braço relaxado (cm)" },
     { key: "braco_flet", label: "Perímetro de braço contraído (cm)" },
     { key: "cintura", label: "Perímetro de cintura (cm)" },
+    { key: "abdome_perim", label: "Perímetro de abdome (cm)" },
     { key: "gluteo", label: "Perímetro de quadril (cm)" },
     { key: "coxa_media", label: "Perímetro de coxa média (cm)" },
     { key: "pant_perim", label: "Perímetro de panturrilha medial (cm)" },

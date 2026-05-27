@@ -107,6 +107,7 @@ describe("Excel Generator", () => {
           braco_rel: [28.0, 28.1, 27.9],
           braco_flet: [32.0, 32.1, 31.9],
           cintura: [80.0, 80.1, 79.9],
+          abdome_perim: [82.0, 82.1, 81.9],
           gluteo: [95.0, 95.1, 94.9],
           coxa_media: [55.0, 55.1, 54.9],
           pant_perim: [38.0, 38.1, 37.9],
@@ -125,7 +126,7 @@ describe("Excel Generator", () => {
       expect(buffer[1]).toBe(0x4b); // 'K'
     });
 
-    it("should include all 15 ISAK fields in correct order", async () => {
+    it("should include all 16 ISAK fields in correct order", async () => {
       const mockData: IsakEvaluation = {
         id: 1,
         userId: 1,
@@ -144,6 +145,7 @@ describe("Excel Generator", () => {
           braco_rel: [28.0],
           braco_flet: [32.0],
           cintura: [80.0],
+          abdome_perim: [82.0],
           gluteo: [95.0],
           coxa_media: [55.0],
           pant_perim: [38.0],
@@ -180,6 +182,7 @@ describe("Excel Generator", () => {
         "Perímetro de braço relaxado (cm)",
         "Perímetro de braço contraído (cm)",
         "Perímetro de cintura (cm)",
+        "Perímetro de abdome (cm)",
         "Perímetro de quadril (cm)",
         "Perímetro de coxa média (cm)",
         "Perímetro de panturrilha medial (cm)",

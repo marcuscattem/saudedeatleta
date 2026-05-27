@@ -30,9 +30,43 @@ const isakFields = [
   { key: "braco_rel", label: "Perímetro de braço relaxado (cm)", kind: "perimeter" },
   { key: "braco_flet", label: "Perímetro de braço contraído (cm)", kind: "perimeter" },
   { key: "cintura", label: "Perímetro de cintura (cm)", kind: "perimeter" },
+  { key: "abdome_perim", label: "Perímetro de abdome (cm)", kind: "perimeter" },
   { key: "gluteo", label: "Perímetro de quadril (cm)", kind: "perimeter" },
   { key: "coxa_media", label: "Perímetro de coxa média (cm)", kind: "perimeter" },
   { key: "pant_perim", label: "Perímetro de panturrilha medial (cm)", kind: "perimeter" },
+] as const;
+
+const isakTutorialPoints = [
+  "Ponto subescapular",
+  "Ponto acromial",
+  "Ponto radial",
+  "Ponto médio acromial-radial",
+  "Ponto do tríceps",
+  "Ponto do bíceps",
+  "Crista ilíaca",
+  "Ponto supraespinhal",
+  "Ponto abdominal",
+  "Ponto da coxa anterior",
+  "Ponto de panturrilha medial",
+] as const;
+
+const isakTutorialSites = [
+  "Dobra subescapular",
+  "Dobra de tríceps",
+  "Dobra de bíceps",
+  "Dobra de crista ilíaca",
+  "Dobra supraespinhal",
+  "Dobra abdominal",
+  "Dobra de coxa anterior",
+  "Dobra de panturrilha medial",
+  "Perímetro de tórax",
+  "Perímetro de braço relaxado",
+  "Perímetro de braço contraído",
+  "Perímetro de cintura",
+  "Perímetro de abdome",
+  "Perímetro de quadril",
+  "Perímetro de coxa média",
+  "Perímetro de panturrilha medial",
 ] as const;
 
 function dateStamp(date = new Date()) {
@@ -144,6 +178,9 @@ export default function Home() {
   const [isakInputs, setIsakInputs] = useState<Record<string, string>>({});
   const [isakReview, setIsakReview] = useState(false);
   const [isakEtmOverrideConfirmed, setIsakEtmOverrideConfirmed] = useState(false);
+  const [isakTutorialStep, setIsakTutorialStep] = useState<"points" | "sites" | "measurements">("measurements");
+  const [isakTutorialCheckedPoints, setIsakTutorialCheckedPoints] = useState<Record<string, boolean>>({});
+  const [isakTutorialCheckedSites, setIsakTutorialCheckedSites] = useState<Record<string, boolean>>({});
 
   // Mutations
   const saveAntropoMutation = trpc.evaluations.saveAntropometria.useMutation();
@@ -343,6 +380,16 @@ export default function Home() {
 
   const antropoHasInvalidEtm = antropoEtmRows.some((row) => !row.isValid);
   const isakHasInvalidEtm = isakEtmRows.some((row) => !row.isValid);
+  const allTutorialPointsChecked = isakTutorialPoints.every((point) => isakTutorialCheckedPoints[point]);
+  const allTutorialSitesChecked = isakTutorialSites.every((site) => isakTutorialCheckedSites[site]);
+
+  const toggleTutorialPoint = (point: string, checked: boolean) => {
+    setIsakTutorialCheckedPoints((current) => ({ ...current, [point]: checked }));
+  };
+
+  const toggleTutorialSite = (site: string, checked: boolean) => {
+    setIsakTutorialCheckedSites((current) => ({ ...current, [site]: checked }));
+  };
 
   const resetAntropo = () => {
     setAntropoRound(1);
@@ -366,6 +413,14 @@ export default function Home() {
     setIsakInputs({});
     setIsakReview(false);
     setIsakEtmOverrideConfirmed(false);
+    setIsakTutorialStep("measurements");
+    setIsakTutorialCheckedPoints({});
+    setIsakTutorialCheckedSites({});
+  };
+
+  const startIsakTutorial = () => {
+    resetIsak();
+    setIsakTutorialStep("points");
   };
 
   const resetParticipant = () => {
@@ -681,6 +736,9 @@ export default function Home() {
         setIsakInputs({});
         setIsakReview(false);
         setIsakEtmOverrideConfirmed(false);
+        setIsakTutorialStep("measurements");
+        setIsakTutorialCheckedPoints({});
+        setIsakTutorialCheckedSites({});
         setParticipantId("");
         setDate(new Date().toISOString().split("T")[0]);
       }
@@ -751,6 +809,16 @@ export default function Home() {
                 className="h-32 text-lg"
               >
                 Antropometria ISAK 1
+              </Button>
+              <Button
+                onClick={() => {
+                  setActiveApp("isakTutorial");
+                  startIsakTutorial();
+                  resetParticipant();
+                }}
+                className="h-32 text-lg"
+              >
+                ISAK Tutorial
               </Button>
             </div>
           </div>
@@ -959,9 +1027,11 @@ export default function Home() {
           </div>
         )}
 
-        {activeApp === "isak" && (
+        {(activeApp === "isak" || activeApp === "isakTutorial") && (
           <div className="bg-white p-6 rounded-lg border">
-            <h2 className="text-xl font-bold mb-4">Antropometria ISAK 1</h2>
+            <h2 className="text-xl font-bold mb-4">
+              {activeApp === "isakTutorial" ? "ISAK Tutorial" : "Antropometria ISAK 1"}
+            </h2>
             <div className="space-y-4">
               <input
                 type="text"
@@ -976,7 +1046,63 @@ export default function Home() {
                 onChange={(e) => setDate(e.target.value)}
                 className="w-full border rounded p-2"
               />
-              {!isakReview && isakRound <= 3 && (
+              {activeApp === "isakTutorial" && isakTutorialStep === "points" && (
+                <>
+                  <h3 className="font-semibold">Referência 1 de 2: pontos anatômicos</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {isakTutorialPoints.map((point) => (
+                      <label key={point} className="flex items-center gap-3 rounded border p-3 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(isakTutorialCheckedPoints[point])}
+                          onChange={(event) => toggleTutorialPoint(point, event.target.checked)}
+                        />
+                        <span>{point}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="flex gap-4">
+                    <Button variant="outline" onClick={handleCancel}>
+                      Cancelar
+                    </Button>
+                    <Button
+                      onClick={() => setIsakTutorialStep("sites")}
+                      disabled={!allTutorialPointsChecked}
+                    >
+                      Próxima referência
+                    </Button>
+                  </div>
+                </>
+              )}
+              {activeApp === "isakTutorial" && isakTutorialStep === "sites" && (
+                <>
+                  <h3 className="font-semibold">Referência 2 de 2: locais de medida</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {isakTutorialSites.map((site) => (
+                      <label key={site} className="flex items-center gap-3 rounded border p-3 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(isakTutorialCheckedSites[site])}
+                          onChange={(event) => toggleTutorialSite(site, event.target.checked)}
+                        />
+                        <span>{site}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="flex gap-4">
+                    <Button variant="outline" onClick={() => setIsakTutorialStep("points")}>
+                      Voltar
+                    </Button>
+                    <Button
+                      onClick={() => setIsakTutorialStep("measurements")}
+                      disabled={!allTutorialSitesChecked}
+                    >
+                      Iniciar medição
+                    </Button>
+                  </div>
+                </>
+              )}
+              {(activeApp === "isak" || isakTutorialStep === "measurements") && !isakReview && isakRound <= 3 && (
                 <>
                   <h3 className="font-semibold">Rodada {isakRound} de 3</h3>
                   <div className="bg-blue-50 p-3 rounded text-sm text-blue-800">
@@ -1005,7 +1131,7 @@ export default function Home() {
                   </div>
                 </>
               )}
-              {isakReview && (
+              {(activeApp === "isak" || isakTutorialStep === "measurements") && isakReview && (
                 <>
                   <h3 className="font-semibold">Revisão do ETM</h3>
                   <div className="overflow-x-auto border rounded">
