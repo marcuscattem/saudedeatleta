@@ -18,55 +18,116 @@ const antropoFields = [
 ] as const;
 
 const isakFields = [
-  { key: "subscap", label: "Dobra subescapular (mm)", kind: "skinfold" },
-  { key: "triceps", label: "Dobra de tríceps (mm)", kind: "skinfold" },
-  { key: "biceps", label: "Dobra de bíceps (mm)", kind: "skinfold" },
-  { key: "iliaca", label: "Dobra de crista ilíaca (mm)", kind: "skinfold" },
-  { key: "supraesp", label: "Dobra supraespinhal (mm)", kind: "skinfold" },
-  { key: "abdom", label: "Dobra abdominal (mm)", kind: "skinfold" },
-  { key: "coxa", label: "Dobra de coxa anterior (mm)", kind: "skinfold" },
-  { key: "pant_dobra", label: "Dobra de panturrilha medial (mm)", kind: "skinfold" },
-  { key: "torax", label: "Perímetro de tórax (cm)", kind: "perimeter" },
-  { key: "braco_rel", label: "Perímetro de braço relaxado (cm)", kind: "perimeter" },
-  { key: "braco_flet", label: "Perímetro de braço contraído (cm)", kind: "perimeter" },
-  { key: "cintura", label: "Perímetro de cintura (cm)", kind: "perimeter" },
-  { key: "abdome_perim", label: "Perímetro de abdome (cm)", kind: "perimeter" },
-  { key: "gluteo", label: "Perímetro de quadril (cm)", kind: "perimeter" },
-  { key: "coxa_media", label: "Perímetro de coxa média (cm)", kind: "perimeter" },
-  { key: "pant_perim", label: "Perímetro de panturrilha medial (cm)", kind: "perimeter" },
+  {
+    key: "subscap",
+    label: "Dobra subescapular (mm)",
+    kind: "skinfold",
+    description: "Dobra oblíqua a 45 graus, marcada cerca de 2 cm abaixo do Subscapulare.",
+  },
+  {
+    key: "triceps",
+    label: "Dobra de tríceps (mm)",
+    kind: "skinfold",
+    description: "Dobra vertical na face posterior do braço, no nível do Ponto Médio Acromiale-Radiale.",
+  },
+  {
+    key: "biceps",
+    label: "Dobra de bíceps (mm)",
+    kind: "skinfold",
+    description: "Dobra vertical na face anterior do braço, no mesmo nível do Ponto Médio Acromiale-Radiale.",
+  },
+  {
+    key: "iliaca",
+    label: "Dobra de crista ilíaca (mm)",
+    kind: "skinfold",
+    description: "Dobra logo acima do Iliocristale, na linha axilar média, levemente inclinada para baixo e para frente.",
+  },
+  {
+    key: "supraesp",
+    label: "Dobra supraespinhal (mm)",
+    kind: "skinfold",
+    description: "Dobra oblíqua a 45 graus na interseção entre a linha do Iliospinale à axila anterior e a linha horizontal do Iliocristale.",
+  },
+  {
+    key: "abdom",
+    label: "Dobra abdominal (mm)",
+    kind: "skinfold",
+    description: "Dobra vertical localizada 5 cm à direita da cicatriz umbilical.",
+  },
+  {
+    key: "coxa",
+    label: "Dobra de coxa anterior (mm)",
+    kind: "skinfold",
+    description: "Dobra vertical na face anterior da coxa, no ponto médio entre a prega inguinal e o Patellare.",
+  },
+  {
+    key: "pant_dobra",
+    label: "Dobra de panturrilha medial (mm)",
+    kind: "skinfold",
+    description: "Dobra vertical na face medial da panturrilha, no nível do maior perímetro da perna.",
+  },
+  {
+    key: "torax",
+    label: "Perímetro de tórax (cm)",
+    kind: "perimeter",
+    description: "Fita no nível do Mesosternale, passando sob as axilas, ao final de uma expiração normal.",
+  },
+  {
+    key: "braco_rel",
+    label: "Perímetro de braço relaxado (cm)",
+    kind: "perimeter",
+    description: "Fita no nível do Ponto Médio Acromiale-Radiale, com o braço relaxado ao lado do corpo.",
+  },
+  {
+    key: "braco_flet",
+    label: "Perímetro de braço contraído (cm)",
+    kind: "perimeter",
+    description: "Maior perímetro do braço com cotovelo flexionado a 90 graus e musculatura contraída.",
+  },
+  {
+    key: "cintura",
+    label: "Perímetro de cintura (cm)",
+    kind: "perimeter",
+    description: "Fita no ponto mais estreito entre a última costela e a crista ilíaca.",
+  },
+  {
+    key: "abdome_perim",
+    label: "Perímetro de abdome (cm)",
+    kind: "perimeter",
+    description: "Fita ao redor do abdome no nível da cicatriz umbilical, sem comprimir a pele.",
+  },
+  {
+    key: "gluteo",
+    label: "Perímetro de quadril (cm)",
+    kind: "perimeter",
+    description: "Maior perímetro da região glútea, com o avaliado em pé e pés unidos.",
+  },
+  {
+    key: "coxa_media",
+    label: "Perímetro de coxa média (cm)",
+    kind: "perimeter",
+    description: "Fita no ponto médio entre o Trochanterion e o Tibiale Laterale, perpendicular ao eixo da coxa.",
+  },
+  {
+    key: "pant_perim",
+    label: "Perímetro de panturrilha medial (cm)",
+    kind: "perimeter",
+    description: "Maior perímetro da panturrilha, com a fita perpendicular ao eixo da perna.",
+  },
 ] as const;
 
 const isakTutorialPoints = [
-  "Ponto subescapular",
-  "Ponto acromial",
-  "Ponto radial",
-  "Ponto médio acromial-radial",
-  "Ponto do tríceps",
-  "Ponto do bíceps",
-  "Crista ilíaca",
-  "Ponto supraespinhal",
-  "Ponto abdominal",
-  "Ponto da coxa anterior",
-  "Ponto de panturrilha medial",
-] as const;
-
-const isakTutorialSites = [
-  "Dobra subescapular",
-  "Dobra de tríceps",
-  "Dobra de bíceps",
-  "Dobra de crista ilíaca",
-  "Dobra supraespinhal",
-  "Dobra abdominal",
-  "Dobra de coxa anterior",
-  "Dobra de panturrilha medial",
-  "Perímetro de tórax",
-  "Perímetro de braço relaxado",
-  "Perímetro de braço contraído",
-  "Perímetro de cintura",
-  "Perímetro de abdome",
-  "Perímetro de quadril",
-  "Perímetro de coxa média",
-  "Perímetro de panturrilha medial",
+  { name: "Acromiale", description: "Ponto na borda superior e lateral do processo acromial da escápula." },
+  { name: "Radiale", description: "Ponto na borda proximal e lateral da cabeça do rádio." },
+  { name: "Ponto Médio Acromiale-Radiale", description: "Ponto equidistante entre o Acromiale e o Radiale." },
+  { name: "Subscapulare", description: "Ponto mais inferior do ângulo inferior da escápula." },
+  { name: "Iliocristale", description: "Ponto mais lateral da borda superior da crista ilíaca." },
+  { name: "Iliospinale", description: "Ponto mais inferior e proeminente da espinha ilíaca ântero-superior." },
+  { name: "Mesosternale", description: "Ponto no plano sagital médio do esterno, no nível da quarta costela." },
+  { name: "Trochanterion", description: "Ponto mais superior do trocânter maior do fêmur." },
+  { name: "Tibiale Laterale", description: "Ponto mais superior na borda lateral da cabeça da tíbia." },
+  { name: "Patellare", description: "Ponto médio na borda superior da patela." },
+  { name: "Cicatriz umbilical", description: "Referência central do abdome para a dobra abdominal e o perímetro de abdome." },
 ] as const;
 
 function dateStamp(date = new Date()) {
@@ -178,9 +239,8 @@ export default function Home() {
   const [isakInputs, setIsakInputs] = useState<Record<string, string>>({});
   const [isakReview, setIsakReview] = useState(false);
   const [isakEtmOverrideConfirmed, setIsakEtmOverrideConfirmed] = useState(false);
-  const [isakTutorialStep, setIsakTutorialStep] = useState<"points" | "sites" | "measurements">("measurements");
+  const [isakTutorialStep, setIsakTutorialStep] = useState<"points" | "measurements">("measurements");
   const [isakTutorialCheckedPoints, setIsakTutorialCheckedPoints] = useState<Record<string, boolean>>({});
-  const [isakTutorialCheckedSites, setIsakTutorialCheckedSites] = useState<Record<string, boolean>>({});
 
   // Mutations
   const saveAntropoMutation = trpc.evaluations.saveAntropometria.useMutation();
@@ -380,15 +440,10 @@ export default function Home() {
 
   const antropoHasInvalidEtm = antropoEtmRows.some((row) => !row.isValid);
   const isakHasInvalidEtm = isakEtmRows.some((row) => !row.isValid);
-  const allTutorialPointsChecked = isakTutorialPoints.every((point) => isakTutorialCheckedPoints[point]);
-  const allTutorialSitesChecked = isakTutorialSites.every((site) => isakTutorialCheckedSites[site]);
+  const allTutorialPointsChecked = isakTutorialPoints.every((point) => isakTutorialCheckedPoints[point.name]);
 
-  const toggleTutorialPoint = (point: string, checked: boolean) => {
-    setIsakTutorialCheckedPoints((current) => ({ ...current, [point]: checked }));
-  };
-
-  const toggleTutorialSite = (site: string, checked: boolean) => {
-    setIsakTutorialCheckedSites((current) => ({ ...current, [site]: checked }));
+  const toggleTutorialPoint = (pointName: string, checked: boolean) => {
+    setIsakTutorialCheckedPoints((current) => ({ ...current, [pointName]: checked }));
   };
 
   const resetAntropo = () => {
@@ -415,7 +470,6 @@ export default function Home() {
     setIsakEtmOverrideConfirmed(false);
     setIsakTutorialStep("measurements");
     setIsakTutorialCheckedPoints({});
-    setIsakTutorialCheckedSites({});
   };
 
   const startIsakTutorial = () => {
@@ -738,7 +792,6 @@ export default function Home() {
         setIsakEtmOverrideConfirmed(false);
         setIsakTutorialStep("measurements");
         setIsakTutorialCheckedPoints({});
-        setIsakTutorialCheckedSites({});
         setParticipantId("");
         setDate(new Date().toISOString().split("T")[0]);
       }
@@ -1048,16 +1101,20 @@ export default function Home() {
               />
               {activeApp === "isakTutorial" && isakTutorialStep === "points" && (
                 <>
-                  <h3 className="font-semibold">Referência 1 de 2: pontos anatômicos</h3>
+                  <h3 className="font-semibold">Pontos anatômicos ISAK</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {isakTutorialPoints.map((point) => (
-                      <label key={point} className="flex items-center gap-3 rounded border p-3 text-sm">
+                      <label key={point.name} className="flex items-start gap-3 rounded border p-3 text-sm">
                         <input
                           type="checkbox"
-                          checked={Boolean(isakTutorialCheckedPoints[point])}
-                          onChange={(event) => toggleTutorialPoint(point, event.target.checked)}
+                          checked={Boolean(isakTutorialCheckedPoints[point.name])}
+                          onChange={(event) => toggleTutorialPoint(point.name, event.target.checked)}
+                          className="mt-1"
                         />
-                        <span>{point}</span>
+                        <span>
+                          <span className="block font-semibold">{point.name}</span>
+                          <span className="block text-slate-600">{point.description}</span>
+                        </span>
                       </label>
                     ))}
                   </div>
@@ -1066,38 +1123,10 @@ export default function Home() {
                       Cancelar
                     </Button>
                     <Button
-                      onClick={() => setIsakTutorialStep("sites")}
+                      onClick={() => setIsakTutorialStep("measurements")}
                       disabled={!allTutorialPointsChecked}
                     >
-                      Próxima referência
-                    </Button>
-                  </div>
-                </>
-              )}
-              {activeApp === "isakTutorial" && isakTutorialStep === "sites" && (
-                <>
-                  <h3 className="font-semibold">Referência 2 de 2: locais de medida</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {isakTutorialSites.map((site) => (
-                      <label key={site} className="flex items-center gap-3 rounded border p-3 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(isakTutorialCheckedSites[site])}
-                          onChange={(event) => toggleTutorialSite(site, event.target.checked)}
-                        />
-                        <span>{site}</span>
-                      </label>
-                    ))}
-                  </div>
-                  <div className="flex gap-4">
-                    <Button variant="outline" onClick={() => setIsakTutorialStep("points")}>
-                      Voltar
-                    </Button>
-                    <Button
-                      onClick={() => setIsakTutorialStep("measurements")}
-                      disabled={!allTutorialSitesChecked}
-                    >
-                      Iniciar medição
+                      Iniciar 1ª rodada
                     </Button>
                   </div>
                 </>
@@ -1110,15 +1139,21 @@ export default function Home() {
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {isakFields.map((field) => (
-                      <input
-                        key={field.key}
-                        type="number"
-                        step="0.1"
-                        placeholder={field.label}
-                        value={isakInputs[field.key] || ""}
-                        onChange={(e) => setIsakInputs({ ...isakInputs, [field.key]: e.target.value })}
-                        className="border rounded p-2"
-                      />
+                      <div key={field.key} className="space-y-1">
+                        <input
+                          type="number"
+                          step="0.1"
+                          placeholder={field.label}
+                          value={isakInputs[field.key] || ""}
+                          onChange={(e) => setIsakInputs({ ...isakInputs, [field.key]: e.target.value })}
+                          className="w-full border rounded p-2"
+                        />
+                        {activeApp === "isakTutorial" && isakRound === 1 && (
+                          <p className="text-xs leading-relaxed text-slate-600">
+                            {field.description}
+                          </p>
+                        )}
+                      </div>
                     ))}
                   </div>
                   <div className="flex gap-4">
