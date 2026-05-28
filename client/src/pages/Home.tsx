@@ -106,7 +106,7 @@ const isakFields = [
     key: "coxa_media",
     label: "Perímetro de coxa média (cm)",
     kind: "perimeter",
-    description: "Fita no ponto médio entre o Trochanterion e o Tibiale Laterale, perpendicular ao eixo da coxa.",
+    description: "Fita posicionada na altura da medida da dobra cutânea de coxa anterior, perpendicular ao eixo da coxa.",
   },
   {
     key: "pant_perim",
@@ -124,8 +124,7 @@ const isakTutorialPoints = [
   { name: "Iliocristale", description: "Ponto mais lateral da borda superior da crista ilíaca." },
   { name: "Iliospinale", description: "Ponto mais inferior e proeminente da espinha ilíaca ântero-superior." },
   { name: "Mesosternale", description: "Ponto no plano sagital médio do esterno, no nível da quarta costela." },
-  { name: "Trochanterion", description: "Ponto mais superior do trocânter maior do fêmur." },
-  { name: "Tibiale Laterale", description: "Ponto mais superior na borda lateral da cabeça da tíbia." },
+  { name: "Ponto inguinal", description: "Ponto na linha inguinal imaginária entre a espinha ilíaca anterossuperior e a sínfise púbica." },
   { name: "Patellare", description: "Ponto médio na borda superior da patela." },
   { name: "Cicatriz umbilical", description: "Referência central do abdome para a dobra abdominal e o perímetro de abdome." },
 ] as const;
