@@ -1,6 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import ExcelJS from "exceljs";
+import { Calculator, ClipboardList, Dumbbell, ExternalLink, GraduationCap, Ruler } from "lucide-react";
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -838,9 +839,12 @@ export default function Home() {
                   resetAntropo();
                   resetParticipant();
                 }}
-                className="h-32 text-lg"
+                className="h-32 justify-start bg-slate-900 p-5 text-left text-lg hover:bg-slate-800"
               >
-                Antropometria
+                <span className="flex items-center gap-4">
+                  <Ruler className="size-7" />
+                  <span>Antropometria</span>
+                </span>
               </Button>
               <Button
                 onClick={() => {
@@ -848,9 +852,12 @@ export default function Home() {
                   resetFpm();
                   resetParticipant();
                 }}
-                className="h-32 text-lg"
+                className="h-32 justify-start bg-slate-900 p-5 text-left text-lg hover:bg-slate-800"
               >
-                Força de Preensão Manual
+                <span className="flex items-center gap-4">
+                  <Dumbbell className="size-7" />
+                  <span>Força de Preensão Manual</span>
+                </span>
               </Button>
               <Button
                 onClick={() => {
@@ -858,9 +865,12 @@ export default function Home() {
                   resetIsak();
                   resetParticipant();
                 }}
-                className="h-32 text-lg"
+                className="h-32 justify-start bg-slate-900 p-5 text-left text-lg hover:bg-slate-800"
               >
-                Antropometria ISAK 1
+                <span className="flex items-center gap-4">
+                  <ClipboardList className="size-7" />
+                  <span>Antropometria ISAK 1</span>
+                </span>
               </Button>
               <Button
                 onClick={() => {
@@ -868,9 +878,29 @@ export default function Home() {
                   startIsakTutorial();
                   resetParticipant();
                 }}
-                className="h-32 text-lg"
+                className="h-32 justify-start bg-slate-900 p-5 text-left text-lg hover:bg-slate-800"
               >
-                ISAK Tutorial
+                <span className="flex items-center gap-4">
+                  <GraduationCap className="size-7" />
+                  <span>ISAK Tutorial</span>
+                </span>
+              </Button>
+              <Button
+                asChild
+                variant="outline"
+                className="h-32 justify-start border-slate-300 bg-white p-5 text-left text-lg text-slate-900 hover:bg-slate-100"
+              >
+                <a
+                  href="https://ultrakcalc.github.io/UltraKcalc/index.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <span className="flex items-center gap-4">
+                    <Calculator className="size-7" />
+                    <span>UltraKcalc</span>
+                    <ExternalLink className="size-5 text-slate-500" />
+                  </span>
+                </a>
               </Button>
             </div>
           </div>
