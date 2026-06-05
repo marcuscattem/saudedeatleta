@@ -19,6 +19,10 @@ function safeFilenamePart(value: string) {
   return value.trim().replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "participante";
 }
 
+function collectionFilename(date: Date, participantId: string) {
+  return `${dateStamp(date)}_${safeFilenamePart(participantId)}.xlsx`;
+}
+
 function createExcelResponse(buffer: Buffer, filename: string, excelUrl?: string | null) {
   return {
     data: buffer.toString("base64"),
@@ -99,7 +103,7 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new Error("Not authenticated");
-        const filename = `fpm_${safeFilenamePart(input.participantId)}_${dateStamp()}.xlsx`;
+        const filename = collectionFilename(input.date, input.participantId);
         const excelData: FpmEvaluation = {
           id: 0,
           userId: ctx.user.id,
@@ -222,7 +226,7 @@ export const appRouter = router({
         const buffer = await generateFpmExcel(data[0]);
         return createExcelResponse(
           buffer,
-          `fpm_${safeFilenamePart(data[0].participantId)}_${dateStamp()}.xlsx`,
+          collectionFilename(data[0].date, data[0].participantId),
           data[0].excelUrl,
         );
       }),

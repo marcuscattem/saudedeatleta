@@ -54,7 +54,7 @@ describe("Excel Generator", () => {
       expect(buffer[1]).toBe(0x4b); // 'K'
     });
 
-    it("should include FPM summary statistics", async () => {
+    it("should include FPM measurements side by side with summary statistics", async () => {
       const mockData: FpmEvaluation = {
         id: 1,
         userId: 1,
@@ -72,18 +72,26 @@ describe("Excel Generator", () => {
       const buffer = await generateFpmExcel(mockData);
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(buffer);
-      const worksheet = workbook.getWorksheet("Resumo FPM");
+      const worksheet = workbook.getWorksheet("FPM");
 
-      expect(worksheet?.getCell("A2").value).toBe("Força média - lado direito");
-      expect(worksheet?.getCell("B2").value).toBe(45);
-      expect(worksheet?.getCell("A3").value).toBe("Força média - lado esquerdo");
-      expect(worksheet?.getCell("B3").value).toBe(42);
-      expect(worksheet?.getCell("A4").value).toBe("Força máxima - lado direito");
-      expect(worksheet?.getCell("B4").value).toBe(45.5);
-      expect(worksheet?.getCell("A5").value).toBe("Força máxima - lado esquerdo");
-      expect(worksheet?.getCell("B5").value).toBe(42.5);
-      expect(worksheet?.getCell("A6").value).toBe("Força máxima total");
-      expect(worksheet?.getCell("B6").value).toBe(45.5);
+      expect(workbook.getWorksheet("Resumo FPM")).toBeUndefined();
+      expect(worksheet?.getCell("E1").value).toBe("Direito 1 (kgf)");
+      expect(worksheet?.getCell("J1").value).toBe("Esquerdo 3 (kgf)");
+      expect(worksheet?.getCell("K1").value).toBe("Média força lado direito (kgf)");
+      expect(worksheet?.getCell("M1").value).toBe("Média geral (kgf)");
+      expect(worksheet?.getCell("P1").value).toBe("Maior força geral (kgf)");
+      expect(worksheet?.getCell("E2").value).toBe(45);
+      expect(worksheet?.getCell("F2").value).toBe(45.5);
+      expect(worksheet?.getCell("G2").value).toBe(44.5);
+      expect(worksheet?.getCell("H2").value).toBe(42);
+      expect(worksheet?.getCell("I2").value).toBe(42.5);
+      expect(worksheet?.getCell("J2").value).toBe(41.5);
+      expect(worksheet?.getCell("K2").value).toBe(45);
+      expect(worksheet?.getCell("L2").value).toBe(42);
+      expect(worksheet?.getCell("M2").value).toBe(43.5);
+      expect(worksheet?.getCell("N2").value).toBe(45.5);
+      expect(worksheet?.getCell("O2").value).toBe(42.5);
+      expect(worksheet?.getCell("P2").value).toBe(45.5);
     });
   });
 

@@ -17,13 +17,15 @@ function getFpmStats(rightMeasurements: number[], leftMeasurements: number[]) {
   const leftAverage = calculateMean(leftMeasurements);
   const rightMax = calculateMax(rightMeasurements);
   const leftMax = calculateMax(leftMeasurements);
+  const allMeasurements = [...rightMeasurements, ...leftMeasurements];
 
   return {
     rightAverage,
     leftAverage,
+    generalAverage: calculateMean(allMeasurements),
     rightMax,
     leftMax,
-    totalMax: calculateMax([rightMax, leftMax]),
+    generalMax: calculateMax(allMeasurements),
   };
 }
 
@@ -82,48 +84,49 @@ export async function generateAntropometriaExcel(data: Antropometria): Promise<B
 export async function generateFpmExcel(data: FpmEvaluation): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet("FPM");
+  const rightMeasurements = JSON.parse(data.rightMeasurements);
+  const leftMeasurements = JSON.parse(data.leftMeasurements);
+  const stats = getFpmStats(rightMeasurements, leftMeasurements);
 
   worksheet.columns = [
     { header: "ID Participante", key: "participantId", width: 15 },
     { header: "Data", key: "date", width: 15 },
     { header: "Mão Dominante", key: "dominantHand", width: 15 },
     { header: "Perna Melhor", key: "bestLeg", width: 15 },
-    { header: "Medida", key: "round", width: 10 },
-    { header: "Lado Direito (kgf)", key: "right", width: 15 },
-    { header: "Lado Esquerdo (kgf)", key: "left", width: 15 },
+    { header: "Direito 1 (kgf)", key: "right1", width: 15 },
+    { header: "Direito 2 (kgf)", key: "right2", width: 15 },
+    { header: "Direito 3 (kgf)", key: "right3", width: 15 },
+    { header: "Esquerdo 1 (kgf)", key: "left1", width: 15 },
+    { header: "Esquerdo 2 (kgf)", key: "left2", width: 15 },
+    { header: "Esquerdo 3 (kgf)", key: "left3", width: 15 },
+    { header: "Média força lado direito (kgf)", key: "rightAverage", width: 25 },
+    { header: "Média força lado esquerdo (kgf)", key: "leftAverage", width: 26 },
+    { header: "Média geral (kgf)", key: "generalAverage", width: 18 },
+    { header: "Maior força lado direito (kgf)", key: "rightMax", width: 25 },
+    { header: "Maior força lado esquerdo (kgf)", key: "leftMax", width: 26 },
+    { header: "Maior força geral (kgf)", key: "generalMax", width: 22 },
   ];
 
-  const rightMeasurements = JSON.parse(data.rightMeasurements);
-  const leftMeasurements = JSON.parse(data.leftMeasurements);
-
-  for (let i = 0; i < rightMeasurements.length; i++) {
-    worksheet.addRow({
-      participantId: data.participantId,
-      date: new Date(data.date).toLocaleDateString("pt-BR"),
-      dominantHand: data.dominantHand,
-      bestLeg: data.bestLeg,
-      round: i + 1,
-      right: rightMeasurements[i],
-      left: leftMeasurements[i],
-    });
-  }
+  worksheet.addRow({
+    participantId: data.participantId,
+    date: new Date(data.date).toLocaleDateString("pt-BR"),
+    dominantHand: data.dominantHand,
+    bestLeg: data.bestLeg,
+    right1: rightMeasurements[0],
+    right2: rightMeasurements[1],
+    right3: rightMeasurements[2],
+    left1: leftMeasurements[0],
+    left2: leftMeasurements[1],
+    left3: leftMeasurements[2],
+    rightAverage: stats.rightAverage,
+    leftAverage: stats.leftAverage,
+    generalAverage: stats.generalAverage,
+    rightMax: stats.rightMax,
+    leftMax: stats.leftMax,
+    generalMax: stats.generalMax,
+  });
 
   styleHeader(worksheet, "FF70AD47");
-
-  const stats = getFpmStats(rightMeasurements, leftMeasurements);
-  const summaryWorksheet = workbook.addWorksheet("Resumo FPM");
-  summaryWorksheet.columns = [
-    { header: "Indicador", key: "metric", width: 34 },
-    { header: "Valor (kgf)", key: "value", width: 16 },
-  ];
-  summaryWorksheet.addRows([
-    { metric: "Força média - lado direito", value: stats.rightAverage },
-    { metric: "Força média - lado esquerdo", value: stats.leftAverage },
-    { metric: "Força máxima - lado direito", value: stats.rightMax },
-    { metric: "Força máxima - lado esquerdo", value: stats.leftMax },
-    { metric: "Força máxima total", value: stats.totalMax },
-  ]);
-  styleHeader(summaryWorksheet, "FF70AD47");
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);

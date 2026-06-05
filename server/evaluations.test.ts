@@ -101,7 +101,7 @@ describe("evaluations", () => {
 
       const result = await caller.evaluations.saveFpm({
         participantId: "P001",
-        date: new Date(),
+        date: new Date("2026-06-05T00:00:00.000Z"),
         dominantHand: "Direita",
         bestLeg: "Direita",
         rightMeasurements: [45.0, 45.5, 44.8],
@@ -110,7 +110,7 @@ describe("evaluations", () => {
 
       expect(result).toBeDefined();
       expect(result.id).toBe(2);
-      expect(result.filename).toMatch(/^fpm_P001_/);
+      expect(result.filename).toBe("2026-06-05_P001.xlsx");
       expect(result.excelUrl).toContain("/manus-storage/evaluations/1/");
       expect(result.data.length).toBeGreaterThan(0);
     });

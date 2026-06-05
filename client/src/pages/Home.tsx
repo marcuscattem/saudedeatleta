@@ -138,6 +138,10 @@ function safeFilenamePart(value: string) {
   return value.trim().replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "participante";
 }
 
+function collectionFilename(date: string, participantId: string) {
+  return `${dateStamp(new Date(date))}_${safeFilenamePart(participantId)}.xlsx`;
+}
+
 function styleHeader(worksheet: ExcelJS.Worksheet, color: string) {
   worksheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
   worksheet.getRow(1).fill = {
@@ -191,13 +195,15 @@ function getFpmStats(rightMeasurements: number[], leftMeasurements: number[]) {
   const leftAverage = calculateMean(leftMeasurements);
   const rightMax = calculateMax(rightMeasurements);
   const leftMax = calculateMax(leftMeasurements);
+  const allMeasurements = [...rightMeasurements, ...leftMeasurements];
 
   return {
     rightAverage,
     leftAverage,
+    generalAverage: calculateMean(allMeasurements),
     rightMax,
     leftMax,
-    totalMax: calculateMax([rightMax, leftMax]),
+    generalMax: calculateMax(allMeasurements),
   };
 }
 
@@ -315,45 +321,49 @@ export default function Home() {
   }) => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("FPM");
+    const stats = getFpmStats(data.rightMeasurements, data.leftMeasurements);
+
     worksheet.columns = [
       { header: "ID Participante", key: "participantId", width: 15 },
       { header: "Data", key: "date", width: 15 },
       { header: "Mão Dominante", key: "dominantHand", width: 15 },
       { header: "Perna Melhor", key: "bestLeg", width: 15 },
-      { header: "Medida", key: "round", width: 10 },
-      { header: "Lado Direito (kgf)", key: "right", width: 15 },
-      { header: "Lado Esquerdo (kgf)", key: "left", width: 15 },
+      { header: "Direito 1 (kgf)", key: "right1", width: 15 },
+      { header: "Direito 2 (kgf)", key: "right2", width: 15 },
+      { header: "Direito 3 (kgf)", key: "right3", width: 15 },
+      { header: "Esquerdo 1 (kgf)", key: "left1", width: 15 },
+      { header: "Esquerdo 2 (kgf)", key: "left2", width: 15 },
+      { header: "Esquerdo 3 (kgf)", key: "left3", width: 15 },
+      { header: "Média força lado direito (kgf)", key: "rightAverage", width: 25 },
+      { header: "Média força lado esquerdo (kgf)", key: "leftAverage", width: 26 },
+      { header: "Média geral (kgf)", key: "generalAverage", width: 18 },
+      { header: "Maior força lado direito (kgf)", key: "rightMax", width: 25 },
+      { header: "Maior força lado esquerdo (kgf)", key: "leftMax", width: 26 },
+      { header: "Maior força geral (kgf)", key: "generalMax", width: 22 },
     ];
 
-    data.rightMeasurements.forEach((right, index) => {
-      worksheet.addRow({
-        participantId: data.participantId,
-        date: new Date(data.date).toLocaleDateString("pt-BR"),
-        dominantHand: data.dominantHand,
-        bestLeg: data.bestLeg,
-        round: index + 1,
-        right,
-        left: data.leftMeasurements[index],
-      });
+    worksheet.addRow({
+      participantId: data.participantId,
+      date: new Date(data.date).toLocaleDateString("pt-BR"),
+      dominantHand: data.dominantHand,
+      bestLeg: data.bestLeg,
+      right1: data.rightMeasurements[0],
+      right2: data.rightMeasurements[1],
+      right3: data.rightMeasurements[2],
+      left1: data.leftMeasurements[0],
+      left2: data.leftMeasurements[1],
+      left3: data.leftMeasurements[2],
+      rightAverage: stats.rightAverage,
+      leftAverage: stats.leftAverage,
+      generalAverage: stats.generalAverage,
+      rightMax: stats.rightMax,
+      leftMax: stats.leftMax,
+      generalMax: stats.generalMax,
     });
 
     styleHeader(worksheet, "FF70AD47");
-    const stats = getFpmStats(data.rightMeasurements, data.leftMeasurements);
-    const summaryWorksheet = workbook.addWorksheet("Resumo FPM");
-    summaryWorksheet.columns = [
-      { header: "Indicador", key: "metric", width: 34 },
-      { header: "Valor (kgf)", key: "value", width: 16 },
-    ];
-    summaryWorksheet.addRows([
-      { metric: "Força média - lado direito", value: stats.rightAverage },
-      { metric: "Força média - lado esquerdo", value: stats.leftAverage },
-      { metric: "Força máxima - lado direito", value: stats.rightMax },
-      { metric: "Força máxima - lado esquerdo", value: stats.leftMax },
-      { metric: "Força máxima total", value: stats.totalMax },
-    ]);
-    styleHeader(summaryWorksheet, "FF70AD47");
 
-    await downloadWorkbook(workbook, `fpm_${safeFilenamePart(data.participantId)}_${dateStamp()}.xlsx`);
+    await downloadWorkbook(workbook, collectionFilename(data.date, data.participantId));
   };
 
   const generateLocalIsakExcel = async (data: {
