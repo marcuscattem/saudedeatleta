@@ -196,5 +196,47 @@ describe("Excel Generator", () => {
         "Perímetro de panturrilha medial (cm)",
       ]);
     });
+
+    it("should include expanded ISAK skinfold fields when measurements are present", async () => {
+      const mockData: IsakEvaluation = {
+        id: 1,
+        userId: 1,
+        participantId: "P001",
+        date: new Date(),
+        measurements: JSON.stringify({
+          subscap: [10.5],
+          triceps: [12.0],
+          biceps: [8.5],
+          iliaca: [15.0],
+          supraesp: [9.0],
+          abdom: [20.0],
+          coxa: [18.0],
+          pant_dobra: [11.0],
+          torax: [95.0],
+          braco_rel: [28.0],
+          braco_flet: [32.0],
+          cintura: [80.0],
+          abdome_perim: [82.0],
+          gluteo: [95.0],
+          coxa_media: [55.0],
+          pant_perim: [38.0],
+          toracica: [13.0],
+          axilar_media: [14.0],
+        }),
+        excelUrl: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const buffer = await generateIsakExcel(mockData);
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer);
+      const worksheet = workbook.getWorksheet("ISAK");
+
+      expect(worksheet?.getCell("T1").value).toBe("Dobra torácica (mm)");
+      expect(worksheet?.getCell("U1").value).toBe("Dobra axilar média (mm)");
+      expect(worksheet?.getCell("T2").value).toBe(13);
+      expect(worksheet?.getCell("U2").value).toBe(14);
+    });
   });
 });

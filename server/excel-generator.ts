@@ -1,6 +1,30 @@
 import ExcelJS from "exceljs";
 import { Antropometria, FpmEvaluation, IsakEvaluation } from "../drizzle/schema";
 
+const baseIsakFields = [
+  { key: "subscap", label: "Dobra subescapular (mm)" },
+  { key: "triceps", label: "Dobra de tríceps (mm)" },
+  { key: "biceps", label: "Dobra de bíceps (mm)" },
+  { key: "iliaca", label: "Dobra de crista ilíaca (mm)" },
+  { key: "supraesp", label: "Dobra supraespinhal (mm)" },
+  { key: "abdom", label: "Dobra abdominal (mm)" },
+  { key: "coxa", label: "Dobra de coxa anterior (mm)" },
+  { key: "pant_dobra", label: "Dobra de panturrilha medial (mm)" },
+  { key: "torax", label: "Perímetro de tórax (cm)" },
+  { key: "braco_rel", label: "Perímetro de braço relaxado (cm)" },
+  { key: "braco_flet", label: "Perímetro de braço contraído (cm)" },
+  { key: "cintura", label: "Perímetro de cintura (cm)" },
+  { key: "abdome_perim", label: "Perímetro de abdome (cm)" },
+  { key: "gluteo", label: "Perímetro de quadril (cm)" },
+  { key: "coxa_media", label: "Perímetro de coxa média (cm)" },
+  { key: "pant_perim", label: "Perímetro de panturrilha medial (cm)" },
+];
+
+const expandedIsakSkinfoldFields = [
+  { key: "toracica", label: "Dobra torácica (mm)" },
+  { key: "axilar_media", label: "Dobra axilar média (mm)" },
+];
+
 function calculateMean(values: number[]) {
   const validValues = values.filter(Number.isFinite);
   if (validValues.length === 0) return Number.NaN;
@@ -138,25 +162,10 @@ export async function generateIsakExcel(data: IsakEvaluation): Promise<Buffer> {
 
   const measurements = JSON.parse(data.measurements);
 
-  // Define field labels in the new order
-  const fields = [
-    { key: "subscap", label: "Dobra subescapular (mm)" },
-    { key: "triceps", label: "Dobra de tríceps (mm)" },
-    { key: "biceps", label: "Dobra de bíceps (mm)" },
-    { key: "iliaca", label: "Dobra de crista ilíaca (mm)" },
-    { key: "supraesp", label: "Dobra supraespinhal (mm)" },
-    { key: "abdom", label: "Dobra abdominal (mm)" },
-    { key: "coxa", label: "Dobra de coxa anterior (mm)" },
-    { key: "pant_dobra", label: "Dobra de panturrilha medial (mm)" },
-    { key: "torax", label: "Perímetro de tórax (cm)" },
-    { key: "braco_rel", label: "Perímetro de braço relaxado (cm)" },
-    { key: "braco_flet", label: "Perímetro de braço contraído (cm)" },
-    { key: "cintura", label: "Perímetro de cintura (cm)" },
-    { key: "abdome_perim", label: "Perímetro de abdome (cm)" },
-    { key: "gluteo", label: "Perímetro de quadril (cm)" },
-    { key: "coxa_media", label: "Perímetro de coxa média (cm)" },
-    { key: "pant_perim", label: "Perímetro de panturrilha medial (cm)" },
-  ];
+  const hasExpandedSkinfolds = expandedIsakSkinfoldFields.some((field) => measurements[field.key]);
+  const fields = hasExpandedSkinfolds
+    ? [...baseIsakFields, ...expandedIsakSkinfoldFields]
+    : baseIsakFields;
 
   // Create columns dynamically
   const columns = [

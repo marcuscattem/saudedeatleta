@@ -1,7 +1,8 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
+import { getLoginUrl } from "@/const";
 import ExcelJS from "exceljs";
-import { Calculator, ClipboardList, Dumbbell, ExternalLink, GraduationCap, Ruler } from "lucide-react";
+import { Calculator, ClipboardList, Dumbbell, ExternalLink, GraduationCap, LogIn, Ruler, UserPlus } from "lucide-react";
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -117,6 +118,21 @@ const isakFields = [
   },
 ] as const;
 
+const expandedIsakSkinfoldFields = [
+  {
+    key: "toracica",
+    label: "Dobra torácica (mm)",
+    kind: "skinfold",
+    description: "Dobra diagonal na região torácica, alinhada entre a prega axilar anterior e o mamilo.",
+  },
+  {
+    key: "axilar_media",
+    label: "Dobra axilar média (mm)",
+    kind: "skinfold",
+    description: "Dobra vertical na linha axilar média, no nível do processo xifoide.",
+  },
+] as const;
+
 const isakTutorialPoints = [
   { name: "Acromiale", description: "Ponto na borda superior e lateral do processo acromial da escápula." },
   { name: "Radiale", description: "Ponto na borda proximal e lateral da cabeça do rádio." },
@@ -208,12 +224,16 @@ function getFpmStats(rightMeasurements: number[], leftMeasurements: number[]) {
 }
 
 export default function Home() {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, refresh } = useAuth();
   const isStaticPages =
     import.meta.env.BASE_URL === "/saudedeatleta/" ||
     (typeof window !== "undefined" && window.location.hostname.endsWith("github.io"));
   const canUseApp = isAuthenticated || isStaticPages;
   const [activeApp, setActiveApp] = useState("home");
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
+  const [authName, setAuthName] = useState("");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
   const [participantId, setParticipantId] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -245,6 +265,7 @@ export default function Home() {
   const [isakInputs, setIsakInputs] = useState<Record<string, string>>({});
   const [isakReview, setIsakReview] = useState(false);
   const [isakEtmOverrideConfirmed, setIsakEtmOverrideConfirmed] = useState(false);
+  const [isakExpandedSkinfolds, setIsakExpandedSkinfolds] = useState(false);
   const [isakTutorialStep, setIsakTutorialStep] = useState<"points" | "measurements">("measurements");
   const [isakTutorialCheckedPoints, setIsakTutorialCheckedPoints] = useState<Record<string, boolean>>({});
 
@@ -252,6 +273,34 @@ export default function Home() {
   const saveAntropoMutation = trpc.evaluations.saveAntropometria.useMutation();
   const saveFpmMutation = trpc.evaluations.saveFpm.useMutation();
   const saveIsakMutation = trpc.evaluations.saveIsak.useMutation();
+  const signInMutation = trpc.auth.signIn.useMutation();
+  const signUpMutation = trpc.auth.signUp.useMutation();
+  const isAuthPending = signInMutation.isPending || signUpMutation.isPending;
+
+  const handleAuthSubmit = async () => {
+    try {
+      if (authMode === "signup") {
+        await signUpMutation.mutateAsync({
+          name: authName.trim(),
+          email: authEmail.trim(),
+          password: authPassword,
+        });
+        toast.success("Conta criada com sucesso!");
+      } else {
+        await signInMutation.mutateAsync({
+          email: authEmail.trim(),
+          password: authPassword,
+        });
+        toast.success("Login realizado!");
+      }
+
+      setAuthName("");
+      setAuthPassword("");
+      await refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Erro ao autenticar");
+    }
+  };
 
   const downloadExcel = (excelResult: { data: string; filename: string }) => {
     const link = document.createElement("a");
@@ -370,17 +419,22 @@ export default function Home() {
     participantId: string;
     date: string;
     measurements: Record<string, number[]>;
+    expandedSkinfolds: boolean;
   }) => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("ISAK");
+    const fields = data.expandedSkinfolds
+      ? [...isakFields, ...expandedIsakSkinfoldFields]
+      : [...isakFields];
+
     worksheet.columns = [
       { header: "ID Participante", key: "participantId", width: 15 },
       { header: "Data", key: "date", width: 15 },
       { header: "Rodada", key: "round", width: 10 },
-      ...isakFields.map((field) => ({ header: field.label, key: field.key, width: 18 })),
+      ...fields.map((field) => ({ header: field.label, key: field.key, width: 18 })),
     ];
 
-    const numRounds = data.measurements[isakFields[0].key]?.length || 0;
+    const numRounds = data.measurements[fields[0].key]?.length || 0;
     for (let round = 0; round < numRounds; round++) {
       const row: Record<string, unknown> = {
         participantId: data.participantId,
@@ -388,7 +442,7 @@ export default function Home() {
         round: round + 1,
       };
 
-      isakFields.forEach((field) => {
+      fields.forEach((field) => {
         row[field.key] = data.measurements[field.key]?.[round];
       });
 
@@ -418,7 +472,17 @@ export default function Home() {
     if (activeApp !== "home") {
       setHasUnsavedChanges(true);
     }
-  }, [activeApp, participantId, date, antropoInputs, fpmInputs, fpmDominantHand, fpmBestLeg, isakInputs]);
+  }, [
+    activeApp,
+    participantId,
+    date,
+    antropoInputs,
+    fpmInputs,
+    fpmDominantHand,
+    fpmBestLeg,
+    isakInputs,
+    isakExpandedSkinfolds,
+  ]);
 
   const antropoEtmRows = antropoFields.map((field) => {
     const values = antropoData[field.key];
@@ -434,7 +498,13 @@ export default function Home() {
     };
   });
 
-  const isakEtmRows = isakFields.map((field) => {
+  const activeIsakFields = isakExpandedSkinfolds
+    ? [...isakFields, ...expandedIsakSkinfoldFields]
+    : [...isakFields];
+  const isakCanChangeExpandedSkinfolds =
+    isakRound === 1 && Object.keys(isakData).length === 0 && !isakReview;
+
+  const isakEtmRows = activeIsakFields.map((field) => {
     const values = isakData[field.key] ?? [];
     const etmPercent = calculateEtmPercent(values);
     const limit = getEtmLimit(field.kind);
@@ -478,6 +548,7 @@ export default function Home() {
     setIsakInputs({});
     setIsakReview(false);
     setIsakEtmOverrideConfirmed(false);
+    setIsakExpandedSkinfolds(false);
     setIsakTutorialStep("measurements");
     setIsakTutorialCheckedPoints({});
   };
@@ -566,6 +637,7 @@ export default function Home() {
       participantId,
       date,
       measurements: data,
+      expandedSkinfolds: isakExpandedSkinfolds,
     };
 
     try {
@@ -573,7 +645,8 @@ export default function Home() {
         await generateLocalIsakExcel(payload);
       } else {
         const result = await saveIsakMutation.mutateAsync({
-          ...payload,
+          participantId: payload.participantId,
+          measurements: payload.measurements,
           date: new Date(payload.date),
         });
 
@@ -750,7 +823,7 @@ export default function Home() {
     let valid = true;
     const newData: Record<string, number[]> = { ...isakData };
 
-    isakFields.forEach((field) => {
+    activeIsakFields.forEach((field) => {
       const val = parseFloat(isakInputs[field.key] || "");
       if (isNaN(val)) {
         valid = false;
@@ -800,6 +873,7 @@ export default function Home() {
         setIsakInputs({});
         setIsakReview(false);
         setIsakEtmOverrideConfirmed(false);
+        setIsakExpandedSkinfolds(false);
         setIsakTutorialStep("measurements");
         setIsakTutorialCheckedPoints({});
         setParticipantId("");
@@ -813,12 +887,64 @@ export default function Home() {
   if (!canUseApp) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="text-center">
+        <div className="w-full max-w-md rounded-lg border bg-white p-6">
           <h1 className="text-3xl font-bold mb-4">Portal Saúde de Atleta</h1>
-          <p className="text-slate-600 mb-6">Faça login para acessar a ferramenta</p>
-          <Button onClick={() => window.location.href = "/api/oauth/login"}>
-            Fazer Login
-          </Button>
+          <div className="mb-4 grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              variant={authMode === "signin" ? "default" : "outline"}
+              onClick={() => setAuthMode("signin")}
+              className="gap-2"
+            >
+              <LogIn className="size-4" />
+              Entrar
+            </Button>
+            <Button
+              type="button"
+              variant={authMode === "signup" ? "default" : "outline"}
+              onClick={() => setAuthMode("signup")}
+              className="gap-2"
+            >
+              <UserPlus className="size-4" />
+              Criar conta
+            </Button>
+          </div>
+          <div className="space-y-3">
+            {authMode === "signup" && (
+              <input
+                type="text"
+                placeholder="Nome"
+                value={authName}
+                onChange={(event) => setAuthName(event.target.value)}
+                className="w-full border rounded p-2"
+              />
+            )}
+            <input
+              type="email"
+              placeholder="Email"
+              value={authEmail}
+              onChange={(event) => setAuthEmail(event.target.value)}
+              className="w-full border rounded p-2"
+            />
+            <input
+              type="password"
+              placeholder="Senha"
+              value={authPassword}
+              onChange={(event) => setAuthPassword(event.target.value)}
+              className="w-full border rounded p-2"
+            />
+            <Button onClick={handleAuthSubmit} disabled={isAuthPending} className="w-full gap-2">
+              {authMode === "signup" ? <UserPlus className="size-4" /> : <LogIn className="size-4" />}
+              {authMode === "signup" ? "Criar conta" : "Entrar"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => window.location.href = getLoginUrl()}
+              className="w-full"
+            >
+              Entrar com login externo
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -1138,6 +1264,19 @@ export default function Home() {
                 onChange={(e) => setDate(e.target.value)}
                 className="w-full border rounded p-2"
               />
+              {isakCanChangeExpandedSkinfolds && (
+                <label className="flex items-start gap-3 rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800">
+                  <input
+                    type="checkbox"
+                    checked={isakExpandedSkinfolds}
+                    onChange={(event) => setIsakExpandedSkinfolds(event.target.checked)}
+                    className="mt-1"
+                  />
+                  <span className="font-medium">
+                    Expandir avaliação para dobras torácica e axilar média
+                  </span>
+                </label>
+              )}
               {activeApp === "isakTutorial" && isakTutorialStep === "points" && (
                 <>
                   <h3 className="font-semibold">Pontos anatômicos ISAK</h3>
@@ -1177,7 +1316,7 @@ export default function Home() {
                     Dados salvos: {Object.keys(isakData).length > 0 && `Rodadas: ${isakData[Object.keys(isakData)[0]]?.length || 0}`}
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {isakFields.map((field) => (
+                    {activeIsakFields.map((field) => (
                       <div key={field.key} className="space-y-1">
                         <input
                           type="number"

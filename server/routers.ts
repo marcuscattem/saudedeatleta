@@ -1,13 +1,16 @@
-import { COOKIE_NAME } from "@shared/const";
+import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
 import { z } from "zod";
-import { createAntropometria, createFpmEvaluation, createIsakEvaluation, getUserAntropometrias, getUserFpmEvaluations, getUserIsakEvaluations, getDb } from "./db";
+import { createAntropometria, createFpmEvaluation, createIsakEvaluation, getUserAntropometrias, getUserFpmEvaluations, getUserIsakEvaluations, getDb, getUserByOpenId, upsertUser } from "./db";
 import { generateAntropometriaExcel, generateFpmExcel, generateIsakExcel } from "./excel-generator";
 import { eq } from "drizzle-orm";
 import { antropometrias, fpmEvaluations, isakEvaluations, type Antropometria, type FpmEvaluation, type IsakEvaluation } from "../drizzle/schema";
 import { storagePut } from "./storage";
+import { sdk } from "./_core/sdk";
+import { signInWithSupabase, signUpWithSupabase } from "./supabase-auth";
+import type { TrpcContext } from "./_core/context";
 
 const EXCEL_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -41,10 +44,59 @@ async function uploadEvaluationExcel(filename: string, buffer: Buffer, userId: n
   return storageResult.url;
 }
 
+async function createSupabaseSession(
+  ctx: Pick<TrpcContext, "req" | "res">,
+  user: { openId: string; name: string; email: string | null },
+) {
+  await upsertUser({
+    openId: user.openId,
+    name: user.name,
+    email: user.email,
+    loginMethod: "supabase",
+    lastSignedIn: new Date(),
+  });
+
+  const savedUser = await getUserByOpenId(user.openId);
+  if (!savedUser) {
+    throw new Error("Banco de dados não configurado para salvar o usuário");
+  }
+
+  const sessionToken = await sdk.createSessionToken(user.openId, {
+    name: user.name,
+    expiresInMs: ONE_YEAR_MS,
+  });
+
+  ctx.res.cookie(COOKIE_NAME, sessionToken, {
+    ...getSessionCookieOptions(ctx.req),
+    maxAge: ONE_YEAR_MS,
+  });
+
+  return savedUser;
+}
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
+    signUp: publicProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        email: z.string().email(),
+        password: z.string().min(6),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const user = await signUpWithSupabase(input);
+        return createSupabaseSession(ctx, user);
+      }),
+    signIn: publicProcedure
+      .input(z.object({
+        email: z.string().email(),
+        password: z.string().min(6),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const user = await signInWithSupabase(input);
+        return createSupabaseSession(ctx, user);
+      }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });

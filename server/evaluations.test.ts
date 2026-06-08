@@ -11,10 +11,22 @@ vi.mock("./db", () => ({
   createAntropometria: vi.fn(async () => ({ insertId: 1 })),
   createFpmEvaluation: vi.fn(async () => ({ insertId: 2 })),
   createIsakEvaluation: vi.fn(async () => ({ insertId: 3 })),
+  getUserByOpenId: vi.fn(async () => ({
+    id: 1,
+    openId: "supabase:test-user",
+    email: "test@example.com",
+    name: "Test User",
+    loginMethod: "supabase",
+    role: "user",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    lastSignedIn: new Date(),
+  })),
   getUserAntropometrias: vi.fn(async () => []),
   getUserFpmEvaluations: vi.fn(async () => []),
   getUserIsakEvaluations: vi.fn(async () => []),
   getDb: vi.fn(async () => null),
+  upsertUser: vi.fn(async () => undefined),
 }));
 
 import { appRouter } from "./routers";
