@@ -2,7 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { getLoginUrl } from "@/const";
 import ExcelJS from "exceljs";
-import { Calculator, ClipboardList, Dumbbell, ExternalLink, GraduationCap, LogIn, Ruler, UserPlus } from "lucide-react";
+import { Activity, Calculator, ClipboardList, Dumbbell, ExternalLink, GraduationCap, LogIn, Ruler, UserPlus } from "lucide-react";
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -1034,6 +1034,23 @@ export default function Home() {
                   <span className="flex items-center gap-4">
                     <Calculator className="size-7" />
                     <span>UltraKcalc</span>
+                    <ExternalLink className="size-5 text-slate-500" />
+                  </span>
+                </a>
+              </Button>
+              <Button
+                asChild
+                variant="outline"
+                className="h-32 justify-start border-slate-300 bg-white p-5 text-left text-lg text-slate-900 hover:bg-slate-100"
+              >
+                <a
+                  href="https://marcuscattem.github.io/aiMET/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <span className="flex items-center gap-4">
+                    <Activity className="size-7" />
+                    <span>METCalc</span>
                     <ExternalLink className="size-5 text-slate-500" />
                   </span>
                 </a>
