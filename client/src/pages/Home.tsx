@@ -2,8 +2,26 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { getLoginUrl } from "@/const";
 import ExcelJS from "exceljs";
-import { Activity, Calculator, ClipboardList, Dumbbell, ExternalLink, GraduationCap, LogIn, Ruler, UserPlus } from "lucide-react";
-import { useState, useEffect } from "react";
+import {
+  Activity,
+  ArrowDown,
+  ArrowRight,
+  CalendarCheck2,
+  Calculator,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  Dumbbell,
+  ExternalLink,
+  GraduationCap,
+  Info,
+  LogIn,
+  Ruler,
+  UserPlus,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+import type * as React from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 
@@ -13,125 +31,237 @@ const SKINFOLD_ETM_LIMIT = 5;
 
 type MeasurementKind = "perimeter" | "skinfold";
 
+/* ------------------------------------------------------------------ *
+ *  Design tokens
+ * ------------------------------------------------------------------ */
+const FONTS_HREF =
+  "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap";
+const FONT_HEAD = "'Space Grotesk', system-ui, sans-serif";
+const FONT_BODY = "'Manrope', system-ui, sans-serif";
+
+const C = {
+  navy: "#14203A",
+  surface: "#F7F8FA",
+  card: "#FFFFFF",
+  border: "#E4E8EF",
+  ink: "#14203A",
+  muted: "#6B7585",
+  faint: "#94A0B3",
+  teal: "#0E9C8E",
+  tealDark: "#0B7E72",
+  tealSoft: "#E9F6F3",
+  indigo: "#5B6CD6",
+  indigoDark: "#4250B8",
+  indigoSoft: "#EEF0FB",
+  danger: "#C8453A",
+  dangerSoft: "#FBE9E7",
+};
+
+const INJECTED_CSS = `
+.sa-input::placeholder{color:#AAB3C2;}
+.sa-input:focus{border-color:${C.teal}!important;background:#fff!important;}
+.sa-input-indigo:focus{border-color:${C.indigo}!important;background:#fff!important;}
+.sa-tap{transition:transform .08s ease;}
+.sa-tap:active{transform:scale(.985);}
+.sa-num::-webkit-inner-spin-button,.sa-num::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
+.sa-num{-moz-appearance:textfield;}
+`;
+
+/* ------------------------------------------------------------------ *
+ *  Anthropometry (perimeter-only protocol)
+ * ------------------------------------------------------------------ */
 const antropoFields = [
-  { key: "braco", label: "Braço Direito (cm)", excelHeader: "Braço (cm)", kind: "perimeter" },
-  { key: "cintura", label: "Cintura (cm)", excelHeader: "Cintura (cm)", kind: "perimeter" },
-  { key: "panturrilha", label: "Panturrilha Direita (cm)", excelHeader: "Panturrilha (cm)", kind: "perimeter" },
+  { key: "braco", label: "Braço direito", region: "Membro superior", excelHeader: "Braço (cm)", kind: "perimeter" },
+  { key: "cintura", label: "Cintura", region: "Tronco", excelHeader: "Cintura (cm)", kind: "perimeter" },
+  { key: "panturrilha", label: "Panturrilha direita", region: "Membro inferior", excelHeader: "Panturrilha (cm)", kind: "perimeter" },
 ] as const;
 
-const isakFields = [
+/* ------------------------------------------------------------------ *
+ *  ISAK fields — collection order: cima -> baixo, dorsal -> ventral.
+ *  Todas as DOBRAS primeiro, depois os PERÍMETROS.
+ *  Dobras opcionais (torácica/axilar média) entram na posição
+ *  anatômica correta (após o bíceps) quando expandido.
+ * ------------------------------------------------------------------ */
+const isakDobrasBase = [
   {
     key: "subscap",
     label: "Dobra subescapular (mm)",
+    short: "Subescapular",
+    region: "Dorsal · tronco superior",
     kind: "skinfold",
     description: "Dobra oblíqua a 45 graus, marcada cerca de 2 cm abaixo do Subscapulare.",
   },
   {
     key: "triceps",
     label: "Dobra de tríceps (mm)",
+    short: "Tríceps",
+    region: "Dorsal · braço",
     kind: "skinfold",
     description: "Dobra vertical na face posterior do braço, no nível do Ponto Médio Acromiale-Radiale.",
   },
   {
     key: "biceps",
     label: "Dobra de bíceps (mm)",
+    short: "Bíceps",
+    region: "Ventral · braço",
     kind: "skinfold",
     description: "Dobra vertical na face anterior do braço, no mesmo nível do Ponto Médio Acromiale-Radiale.",
   },
+] as const;
+
+const isakDobrasOptional = [
+  {
+    key: "toracica",
+    label: "Dobra torácica (mm)",
+    short: "Torácica",
+    region: "Ventral · tronco",
+    kind: "skinfold",
+    optional: true,
+    description: "Dobra diagonal na região torácica, alinhada entre a prega axilar anterior e o mamilo.",
+  },
+  {
+    key: "axilar_media",
+    label: "Dobra axilar média (mm)",
+    short: "Axilar média",
+    region: "Lateral · tronco",
+    kind: "skinfold",
+    optional: true,
+    description: "Dobra vertical na linha axilar média, no nível do processo xifoide.",
+  },
+] as const;
+
+const isakDobrasRest = [
   {
     key: "iliaca",
     label: "Dobra de crista ilíaca (mm)",
+    short: "Crista ilíaca",
+    region: "Lateral · quadril",
     kind: "skinfold",
     description: "Dobra logo acima do Iliocristale, na linha axilar média, levemente inclinada para baixo e para frente.",
   },
   {
     key: "supraesp",
     label: "Dobra supraespinhal (mm)",
+    short: "Supraespinhal",
+    region: "Ventral · quadril",
     kind: "skinfold",
     description: "Dobra oblíqua a 45 graus na interseção entre a linha do Iliospinale à axila anterior e a linha horizontal do Iliocristale.",
   },
   {
     key: "abdom",
     label: "Dobra abdominal (mm)",
+    short: "Abdominal",
+    region: "Ventral · abdome",
     kind: "skinfold",
     description: "Dobra vertical localizada 5 cm à direita da cicatriz umbilical.",
   },
   {
     key: "coxa",
     label: "Dobra de coxa anterior (mm)",
+    short: "Coxa anterior",
+    region: "Ventral · coxa",
     kind: "skinfold",
     description: "Dobra vertical na face anterior da coxa, no ponto médio entre a prega inguinal e o Patellare.",
   },
   {
     key: "pant_dobra",
     label: "Dobra de panturrilha medial (mm)",
+    short: "Panturrilha medial",
+    region: "Medial · perna",
     kind: "skinfold",
     description: "Dobra vertical na face medial da panturrilha, no nível do maior perímetro da perna.",
   },
-  {
-    key: "torax",
-    label: "Perímetro de tórax (cm)",
-    kind: "perimeter",
-    description: "Fita no nível do Mesosternale, passando sob as axilas, ao final de uma expiração normal.",
-  },
+] as const;
+
+const isakPerimFields = [
   {
     key: "braco_rel",
     label: "Perímetro de braço relaxado (cm)",
+    short: "Braço relaxado",
+    region: "Membro superior",
     kind: "perimeter",
     description: "Fita no nível do Ponto Médio Acromiale-Radiale, com o braço relaxado ao lado do corpo.",
   },
   {
     key: "braco_flet",
     label: "Perímetro de braço contraído (cm)",
+    short: "Braço contraído",
+    region: "Membro superior",
     kind: "perimeter",
     description: "Maior perímetro do braço com cotovelo flexionado a 90 graus e musculatura contraída.",
   },
   {
+    key: "torax",
+    label: "Perímetro de tórax (cm)",
+    short: "Tórax",
+    region: "Tronco",
+    kind: "perimeter",
+    description: "Fita no nível do Mesosternale, passando sob as axilas, ao final de uma expiração normal.",
+  },
+  {
     key: "cintura",
     label: "Perímetro de cintura (cm)",
+    short: "Cintura",
+    region: "Tronco",
     kind: "perimeter",
     description: "Fita no ponto mais estreito entre a última costela e a crista ilíaca.",
   },
   {
     key: "abdome_perim",
     label: "Perímetro de abdome (cm)",
+    short: "Abdome",
+    region: "Tronco",
     kind: "perimeter",
     description: "Fita ao redor do abdome no nível da cicatriz umbilical, sem comprimir a pele.",
   },
   {
     key: "gluteo",
     label: "Perímetro de quadril (cm)",
+    short: "Quadril",
+    region: "Quadril",
     kind: "perimeter",
     description: "Maior perímetro da região glútea, com o avaliado em pé e pés unidos.",
   },
   {
     key: "coxa_media",
     label: "Perímetro de coxa média (cm)",
+    short: "Coxa média",
+    region: "Membro inferior",
     kind: "perimeter",
     description: "Fita posicionada na altura da medida da dobra cutânea de coxa anterior, perpendicular ao eixo da coxa.",
   },
   {
     key: "pant_perim",
     label: "Perímetro de panturrilha medial (cm)",
+    short: "Panturrilha medial",
+    region: "Membro inferior",
     kind: "perimeter",
     description: "Maior perímetro da panturrilha, com a fita perpendicular ao eixo da perna.",
   },
 ] as const;
 
-const expandedIsakSkinfoldFields = [
-  {
-    key: "toracica",
-    label: "Dobra torácica (mm)",
-    kind: "skinfold",
-    description: "Dobra diagonal na região torácica, alinhada entre a prega axilar anterior e o mamilo.",
-  },
-  {
-    key: "axilar_media",
-    label: "Dobra axilar média (mm)",
-    kind: "skinfold",
-    description: "Dobra vertical na linha axilar média, no nível do processo xifoide.",
-  },
-] as const;
+type IsakField = {
+  key: string;
+  label: string;
+  short: string;
+  region: string;
+  kind: MeasurementKind;
+  optional?: boolean;
+  description: string;
+};
+
+function buildIsakFields(expanded: boolean): IsakField[] {
+  const dobras = expanded
+    ? [...isakDobrasBase, ...isakDobrasOptional, ...isakDobrasRest]
+    : [...isakDobrasBase, ...isakDobrasRest];
+  return [...dobras, ...isakPerimFields] as unknown as IsakField[];
+}
+
+function isakDobrasFor(expanded: boolean): IsakField[] {
+  return (expanded
+    ? [...isakDobrasBase, ...isakDobrasOptional, ...isakDobrasRest]
+    : [...isakDobrasBase, ...isakDobrasRest]) as unknown as IsakField[];
+}
 
 const isakTutorialPoints = [
   { name: "Acromiale", description: "Ponto na borda superior e lateral do processo acromial da escápula." },
@@ -146,6 +276,9 @@ const isakTutorialPoints = [
   { name: "Cicatriz umbilical", description: "Referência central do abdome para a dobra abdominal e o perímetro de abdome." },
 ] as const;
 
+/* ------------------------------------------------------------------ *
+ *  Helpers (unchanged math/export logic)
+ * ------------------------------------------------------------------ */
 function dateStamp(date = new Date()) {
   return date.toISOString().split("T")[0];
 }
@@ -160,11 +293,7 @@ function collectionFilename(date: string, participantId: string) {
 
 function styleHeader(worksheet: ExcelJS.Worksheet, color: string) {
   worksheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
-  worksheet.getRow(1).fill = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: color },
-  };
+  worksheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: color } };
 }
 
 function getEtmLimit(kind: MeasurementKind) {
@@ -186,7 +315,6 @@ function calculateEtmPercent(values: number[]) {
   if (values.length < 2 || values.some((value) => !Number.isFinite(value))) {
     return Number.NaN;
   }
-
   const mean = calculateMean(values);
   if (!Number.isFinite(mean) || mean === 0) return Number.NaN;
 
@@ -196,7 +324,6 @@ function calculateEtmPercent(values: number[]) {
       pairwiseDiffs.push(values[firstIndex] - values[secondIndex]);
     }
   }
-
   const sumSquaredDiffs = pairwiseDiffs.reduce((sum, diff) => sum + diff ** 2, 0);
   const etm = Math.sqrt(sumSquaredDiffs / (2 * pairwiseDiffs.length));
   return (etm / Math.abs(mean)) * 100;
@@ -212,7 +339,6 @@ function getFpmStats(rightMeasurements: number[], leftMeasurements: number[]) {
   const rightMax = calculateMax(rightMeasurements);
   const leftMax = calculateMax(leftMeasurements);
   const allMeasurements = [...rightMeasurements, ...leftMeasurements];
-
   return {
     rightAverage,
     leftAverage,
@@ -223,6 +349,23 @@ function getFpmStats(rightMeasurements: number[], leftMeasurements: number[]) {
   };
 }
 
+const EVAL_COUNT_KEY = "sa_eval_count";
+
+function readTodayEvalCount() {
+  const today = dateStamp();
+  try {
+    const raw = localStorage.getItem(EVAL_COUNT_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as { date?: string; count?: number };
+      if (parsed && parsed.date === today) return parsed.count ?? 0;
+    }
+  } catch {
+    /* ignore */
+  }
+  return 0;
+}
+
+/* ================================================================== */
 export default function Home() {
   const { user, isAuthenticated, refresh } = useAuth();
   const isStaticPages =
@@ -237,6 +380,9 @@ export default function Home() {
   const [participantId, setParticipantId] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  // Daily evaluation counter
+  const [evalCount, setEvalCount] = useState(0);
 
   // Antropometria state
   const [antropoRound, setAntropoRound] = useState(1);
@@ -253,10 +399,7 @@ export default function Home() {
   const [fpmRound, setFpmRound] = useState(1);
   const [fpmDominantHand, setFpmDominantHand] = useState("");
   const [fpmBestLeg, setFpmBestLeg] = useState("");
-  const [fpmData, setFpmData] = useState({
-    right: [] as number[],
-    left: [] as number[],
-  });
+  const [fpmData, setFpmData] = useState({ right: [] as number[], left: [] as number[] });
   const [fpmInputs, setFpmInputs] = useState({ right: "", left: "" });
 
   // ISAK state
@@ -277,23 +420,49 @@ export default function Home() {
   const signUpMutation = trpc.auth.signUp.useMutation();
   const isAuthPending = signInMutation.isPending || signUpMutation.isPending;
 
+  /* ----- font + css injection ----- */
+  useEffect(() => {
+    if (!document.getElementById("sa-fonts")) {
+      const link = document.createElement("link");
+      link.id = "sa-fonts";
+      link.rel = "stylesheet";
+      link.href = FONTS_HREF;
+      document.head.appendChild(link);
+    }
+    if (!document.getElementById("sa-css")) {
+      const style = document.createElement("style");
+      style.id = "sa-css";
+      style.textContent = INJECTED_CSS;
+      document.head.appendChild(style);
+    }
+  }, []);
+
+  /* ----- load today's evaluation count ----- */
+  useEffect(() => {
+    setEvalCount(readTodayEvalCount());
+  }, []);
+
+  const incrementEvalCount = () => {
+    const today = dateStamp();
+    const base = readTodayEvalCount();
+    const next = base + 1;
+    try {
+      localStorage.setItem(EVAL_COUNT_KEY, JSON.stringify({ date: today, count: next }));
+    } catch {
+      /* ignore */
+    }
+    setEvalCount(next);
+  };
+
   const handleAuthSubmit = async () => {
     try {
       if (authMode === "signup") {
-        await signUpMutation.mutateAsync({
-          name: authName.trim(),
-          email: authEmail.trim(),
-          password: authPassword,
-        });
+        await signUpMutation.mutateAsync({ name: authName.trim(), email: authEmail.trim(), password: authPassword });
         toast.success("Conta criada com sucesso!");
       } else {
-        await signInMutation.mutateAsync({
-          email: authEmail.trim(),
-          password: authPassword,
-        });
+        await signInMutation.mutateAsync({ email: authEmail.trim(), password: authPassword });
         toast.success("Login realizado!");
       }
-
       setAuthName("");
       setAuthPassword("");
       await refresh();
@@ -341,7 +510,6 @@ export default function Home() {
       { header: "Cintura (cm)", key: "cintura", width: 15 },
       { header: "Panturrilha (cm)", key: "panturrilha", width: 15 },
     ];
-
     data.bracoMeasurements.forEach((braco, index) => {
       worksheet.addRow({
         participantId: data.participantId,
@@ -352,12 +520,8 @@ export default function Home() {
         panturrilha: data.panturrilhaMeasurements[index],
       });
     });
-
     styleHeader(worksheet, "FF4472C4");
-    await downloadWorkbook(
-      workbook,
-      `antropometria_${safeFilenamePart(data.participantId)}_${dateStamp()}.xlsx`,
-    );
+    await downloadWorkbook(workbook, `antropometria_${safeFilenamePart(data.participantId)}_${dateStamp()}.xlsx`);
   };
 
   const generateLocalFpmExcel = async (data: {
@@ -371,7 +535,6 @@ export default function Home() {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("FPM");
     const stats = getFpmStats(data.rightMeasurements, data.leftMeasurements);
-
     worksheet.columns = [
       { header: "ID Participante", key: "participantId", width: 15 },
       { header: "Data", key: "date", width: 15 },
@@ -390,7 +553,6 @@ export default function Home() {
       { header: "Maior força lado esquerdo (kgf)", key: "leftMax", width: 26 },
       { header: "Maior força geral (kgf)", key: "generalMax", width: 22 },
     ];
-
     worksheet.addRow({
       participantId: data.participantId,
       date: new Date(data.date).toLocaleDateString("pt-BR"),
@@ -409,9 +571,7 @@ export default function Home() {
       leftMax: stats.leftMax,
       generalMax: stats.generalMax,
     });
-
     styleHeader(worksheet, "FF70AD47");
-
     await downloadWorkbook(workbook, collectionFilename(data.date, data.participantId));
   };
 
@@ -423,17 +583,13 @@ export default function Home() {
   }) => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("ISAK");
-    const fields = data.expandedSkinfolds
-      ? [...isakFields, ...expandedIsakSkinfoldFields]
-      : [...isakFields];
-
+    const fields = buildIsakFields(data.expandedSkinfolds);
     worksheet.columns = [
       { header: "ID Participante", key: "participantId", width: 15 },
       { header: "Data", key: "date", width: 15 },
       { header: "Rodada", key: "round", width: 10 },
       ...fields.map((field) => ({ header: field.label, key: field.key, width: 18 })),
     ];
-
     const numRounds = data.measurements[fields[0].key]?.length || 0;
     for (let round = 0; round < numRounds; round++) {
       const row: Record<string, unknown> = {
@@ -441,14 +597,11 @@ export default function Home() {
         date: new Date(data.date).toLocaleDateString("pt-BR"),
         round: round + 1,
       };
-
       fields.forEach((field) => {
         row[field.key] = data.measurements[field.key]?.[round];
       });
-
       worksheet.addRow(row);
     }
-
     styleHeader(worksheet, "FFC00000");
     await downloadWorkbook(workbook, `isak_${safeFilenamePart(data.participantId)}_${dateStamp()}.xlsx`);
   };
@@ -462,16 +615,13 @@ export default function Home() {
         return "";
       }
     };
-
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasUnsavedChanges, activeApp]);
 
   // Marcar como tendo mudanças não salvas
   useEffect(() => {
-    if (activeApp !== "home") {
-      setHasUnsavedChanges(true);
-    }
+    if (activeApp !== "home") setHasUnsavedChanges(true);
   }, [
     activeApp,
     participantId,
@@ -498,11 +648,9 @@ export default function Home() {
     };
   });
 
-  const activeIsakFields = isakExpandedSkinfolds
-    ? [...isakFields, ...expandedIsakSkinfoldFields]
-    : [...isakFields];
-  const isakCanChangeExpandedSkinfolds =
-    isakRound === 1 && Object.keys(isakData).length === 0 && !isakReview;
+  const activeIsakFields = buildIsakFields(isakExpandedSkinfolds);
+  const activeDobras = isakDobrasFor(isakExpandedSkinfolds);
+  const isakCanChangeExpandedSkinfolds = isakRound === 1 && Object.keys(isakData).length === 0 && !isakReview;
 
   const isakEtmRows = activeIsakFields.map((field) => {
     const values = isakData[field.key] ?? [];
@@ -510,7 +658,7 @@ export default function Home() {
     const limit = getEtmLimit(field.kind);
     return {
       key: field.key,
-      label: field.label,
+      label: field.short,
       values,
       etmPercent,
       limit,
@@ -564,6 +712,7 @@ export default function Home() {
   };
 
   const resetAfterSave = (app: "antropo" | "fpm" | "isak") => {
+    incrementEvalCount();
     setHasUnsavedChanges(false);
     setActiveApp("home");
     if (app === "antropo") resetAntropo();
@@ -572,18 +721,12 @@ export default function Home() {
     resetParticipant();
   };
 
-  const updateAntropoReviewValue = (
-    key: (typeof antropoFields)[number]["key"],
-    index: number,
-    value: string
-  ) => {
+  const updateAntropoReviewValue = (key: (typeof antropoFields)[number]["key"], index: number, value: string) => {
     const nextValue = value === "" ? Number.NaN : Number(value);
     setAntropoEtmOverrideConfirmed(false);
     setAntropoData((current) => ({
       ...current,
-      [key]: current[key].map((measurement, measurementIndex) =>
-        measurementIndex === index ? nextValue : measurement
-      ),
+      [key]: current[key].map((measurement, measurementIndex) => (measurementIndex === index ? nextValue : measurement)),
     }));
   };
 
@@ -593,7 +736,7 @@ export default function Home() {
     setIsakData((current) => ({
       ...current,
       [key]: (current[key] ?? []).map((measurement, measurementIndex) =>
-        measurementIndex === index ? nextValue : measurement
+        measurementIndex === index ? nextValue : measurement,
       ),
     }));
   };
@@ -606,22 +749,16 @@ export default function Home() {
       cinturaMeasurements: data.cintura,
       panturrilhaMeasurements: data.panturrilha,
     };
-
     try {
       if (isStaticPages) {
         await generateLocalAntropoExcel(payload);
       } else {
-        const result = await saveAntropoMutation.mutateAsync({
-          ...payload,
-          date: new Date(payload.date),
-        });
-
+        const result = await saveAntropoMutation.mutateAsync({ ...payload, date: new Date(payload.date) });
         downloadExcel(result);
       }
-
       toast.success(isStaticPages ? "Antropometria salva em Excel!" : "Antropometria salva com Excel local e online!");
       resetAfterSave("antropo");
-    } catch (error) {
+    } catch {
       try {
         await generateLocalAntropoExcel(payload);
         toast.success("Antropometria salva em Excel!");
@@ -633,13 +770,7 @@ export default function Home() {
   };
 
   const saveIsakEvaluation = async (data = isakData) => {
-    const payload = {
-      participantId,
-      date,
-      measurements: data,
-      expandedSkinfolds: isakExpandedSkinfolds,
-    };
-
+    const payload = { participantId, date, measurements: data, expandedSkinfolds: isakExpandedSkinfolds };
     try {
       if (isStaticPages) {
         await generateLocalIsakExcel(payload);
@@ -649,13 +780,11 @@ export default function Home() {
           measurements: payload.measurements,
           date: new Date(payload.date),
         });
-
         downloadExcel(result);
       }
-
       toast.success(isStaticPages ? "ISAK salva em Excel!" : "ISAK salva com Excel local e online!");
       resetAfterSave("isak");
-    } catch (error) {
+    } catch {
       try {
         await generateLocalIsakExcel(payload);
         toast.success("ISAK salva em Excel!");
@@ -671,7 +800,6 @@ export default function Home() {
       toast.error("Marque a confirmação para salvar com ETM fora do alvo");
       return;
     }
-
     await saveAntropoEvaluation();
   };
 
@@ -680,7 +808,6 @@ export default function Home() {
       toast.error("Marque a confirmação para salvar com ETM fora do alvo");
       return;
     }
-
     await saveIsakEvaluation();
   };
 
@@ -689,28 +816,24 @@ export default function Home() {
       toast.error("ID do participante é obrigatório");
       return;
     }
-
     const braco = parseFloat(antropoInputs.braco);
     const cintura = parseFloat(antropoInputs.cintura);
     const panturrilha = parseFloat(antropoInputs.panturrilha);
-
     if (isNaN(braco) || isNaN(cintura) || isNaN(panturrilha)) {
       toast.error("Preencha todos os valores");
       return;
     }
-
     const newData = {
       braco: [...antropoData.braco, braco],
       cintura: [...antropoData.cintura, cintura],
       panturrilha: [...antropoData.panturrilha, panturrilha],
     };
-
     if (antropoRound < 3) {
-      // Salvar rodada intermediária
       setAntropoData(newData);
       setAntropoRound(antropoRound + 1);
       setAntropoInputs({ braco: "", cintura: "", panturrilha: "" });
       toast.success(`Rodada ${antropoRound} salva! Próxima rodada...`);
+      focusInputSoon("a-braco");
     } else {
       setAntropoData(newData);
       setAntropoInputs({ braco: "", cintura: "", panturrilha: "" });
@@ -725,36 +848,27 @@ export default function Home() {
       toast.error("ID do participante é obrigatório");
       return;
     }
-
     if (!fpmDominantHand) {
       toast.error("Selecione a mão dominante");
       return;
     }
-
     if (!fpmBestLeg) {
       toast.error("Selecione a perna melhor");
       return;
     }
-
     const right = parseFloat(fpmInputs.right);
     const left = parseFloat(fpmInputs.left);
-
     if (isNaN(right) || isNaN(left)) {
       toast.error("Preencha todos os valores");
       return;
     }
-
-    const newData = {
-      right: [...fpmData.right, right],
-      left: [...fpmData.left, left],
-    };
-
+    const newData = { right: [...fpmData.right, right], left: [...fpmData.left, left] };
     if (fpmRound < 3) {
-      // Salvar rodada intermediária
       setFpmData(newData);
       setFpmRound(fpmRound + 1);
       setFpmInputs({ right: "", left: "" });
       toast.success(`Medida ${fpmRound} salva! Próxima medida...`);
+      focusInputSoon("f-right");
     } else {
       try {
         const payload = {
@@ -765,29 +879,19 @@ export default function Home() {
           rightMeasurements: newData.right,
           leftMeasurements: newData.left,
         };
-
         if (isStaticPages) {
           await generateLocalFpmExcel(payload);
         } else {
-          const result = await saveFpmMutation.mutateAsync({
-            ...payload,
-            date: new Date(payload.date),
-          });
-
+          const result = await saveFpmMutation.mutateAsync({ ...payload, date: new Date(payload.date) });
           downloadExcel(result);
         }
-
         toast.success(isStaticPages ? "FPM salva em Excel!" : "FPM salva com Excel local e online!");
+        incrementEvalCount();
         setHasUnsavedChanges(false);
         setActiveApp("home");
-        setFpmRound(1);
-        setFpmData({ right: [], left: [] });
-        setFpmInputs({ right: "", left: "" });
-        setFpmDominantHand("");
-        setFpmBestLeg("");
-        setParticipantId("");
-        setDate(new Date().toISOString().split("T")[0]);
-      } catch (error) {
+        resetFpm();
+        resetParticipant();
+      } catch {
         try {
           await generateLocalFpmExcel({
             participantId,
@@ -798,15 +902,11 @@ export default function Home() {
             leftMeasurements: newData.left,
           });
           toast.success("FPM salva em Excel!");
+          incrementEvalCount();
           setHasUnsavedChanges(false);
           setActiveApp("home");
-          setFpmRound(1);
-          setFpmData({ right: [], left: [] });
-          setFpmInputs({ right: "", left: "" });
-          setFpmDominantHand("");
-          setFpmBestLeg("");
-          setParticipantId("");
-          setDate(new Date().toISOString().split("T")[0]);
+          resetFpm();
+          resetParticipant();
         } catch {
           toast.error("Erro ao gerar Excel de FPM");
         }
@@ -819,10 +919,8 @@ export default function Home() {
       toast.error("ID do participante é obrigatório");
       return;
     }
-
     let valid = true;
     const newData: Record<string, number[]> = { ...isakData };
-
     activeIsakFields.forEach((field) => {
       const val = parseFloat(isakInputs[field.key] || "");
       if (isNaN(val)) {
@@ -832,18 +930,16 @@ export default function Home() {
       if (!newData[field.key]) newData[field.key] = [];
       newData[field.key].push(val);
     });
-
     if (!valid) {
       toast.error("Preencha todos os valores");
       return;
     }
-
     if (isakRound < 3) {
-      // Salvar rodada intermediária
       setIsakData(newData);
       setIsakRound(isakRound + 1);
       setIsakInputs({});
       toast.success(`Rodada ${isakRound} salva! Próxima rodada...`);
+      focusInputSoon(`inp-${activeIsakFields[0].key}`);
     } else {
       setIsakData(newData);
       setIsakInputs({});
@@ -858,90 +954,96 @@ export default function Home() {
       if (confirm("Você tem alterações não salvas. Deseja descartar?")) {
         setHasUnsavedChanges(false);
         setActiveApp("home");
-        setAntropoRound(1);
-        setAntropoData({ braco: [], cintura: [], panturrilha: [] });
-        setAntropoInputs({ braco: "", cintura: "", panturrilha: "" });
-        setAntropoReview(false);
-        setAntropoEtmOverrideConfirmed(false);
-        setFpmRound(1);
-        setFpmData({ right: [], left: [] });
-        setFpmInputs({ right: "", left: "" });
-        setFpmDominantHand("");
-        setFpmBestLeg("");
-        setIsakRound(1);
-        setIsakData({});
-        setIsakInputs({});
-        setIsakReview(false);
-        setIsakEtmOverrideConfirmed(false);
-        setIsakExpandedSkinfolds(false);
-        setIsakTutorialStep("measurements");
-        setIsakTutorialCheckedPoints({});
-        setParticipantId("");
-        setDate(new Date().toISOString().split("T")[0]);
+        resetAntropo();
+        resetFpm();
+        resetIsak();
+        resetParticipant();
       }
     } else {
       setActiveApp("home");
     }
   };
 
+  /* ----- focus helpers (auto-advance field to field) ----- */
+  function focusInputSoon(id: string) {
+    window.setTimeout(() => {
+      const el = document.getElementById(id) as HTMLInputElement | null;
+      if (el) {
+        el.focus();
+        el.select?.();
+      }
+    }, 60);
+  }
+
+  function makeEnterAdvance(ids: string[], current: string, onLast: () => void) {
+    return (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      const idx = ids.indexOf(current);
+      if (idx > -1 && idx < ids.length - 1) {
+        const el = document.getElementById(ids[idx + 1]) as HTMLInputElement | null;
+        if (el) {
+          el.focus();
+          el.select?.();
+        }
+      } else {
+        onLast();
+      }
+    };
+  }
+
+  /* ================================================================ *
+   *  Auth gate
+   * ================================================================ */
   if (!canUseApp) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="w-full max-w-md rounded-lg border bg-white p-6">
-          <h1 className="text-3xl font-bold mb-4">Portal Saúde de Atleta</h1>
-          <div className="mb-4 grid grid-cols-2 gap-2">
-            <Button
-              type="button"
-              variant={authMode === "signin" ? "default" : "outline"}
-              onClick={() => setAuthMode("signin")}
-              className="gap-2"
-            >
-              <LogIn className="size-4" />
-              Entrar
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: C.surface,
+          fontFamily: FONT_BODY,
+          padding: 18,
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 400,
+            background: C.card,
+            border: `1px solid ${C.border}`,
+            borderRadius: 22,
+            padding: 24,
+            boxShadow: "0 8px 30px rgba(20,32,58,.08)",
+          }}
+        >
+          <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: C.teal, fontWeight: 700, fontFamily: FONT_HEAD }}>
+            Portal Saúde de Atleta
+          </div>
+          <h1 style={{ margin: "4px 0 18px", fontSize: 24, fontWeight: 800, color: C.ink, letterSpacing: "-.02em" }}>
+            {authMode === "signup" ? "Criar conta" : "Entrar"}
+          </h1>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
+            <Button type="button" variant={authMode === "signin" ? "default" : "outline"} onClick={() => setAuthMode("signin")} className="gap-2">
+              <LogIn className="size-4" /> Entrar
             </Button>
-            <Button
-              type="button"
-              variant={authMode === "signup" ? "default" : "outline"}
-              onClick={() => setAuthMode("signup")}
-              className="gap-2"
-            >
-              <UserPlus className="size-4" />
-              Criar conta
+            <Button type="button" variant={authMode === "signup" ? "default" : "outline"} onClick={() => setAuthMode("signup")} className="gap-2">
+              <UserPlus className="size-4" /> Criar conta
             </Button>
           </div>
-          <div className="space-y-3">
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {authMode === "signup" && (
-              <input
-                type="text"
-                placeholder="Nome"
-                value={authName}
-                onChange={(event) => setAuthName(event.target.value)}
-                className="w-full border rounded p-2"
-              />
+              <input className="sa-input" type="text" placeholder="Nome" value={authName} onChange={(e) => setAuthName(e.target.value)} style={inputStyle} />
             )}
-            <input
-              type="email"
-              placeholder="Email"
-              value={authEmail}
-              onChange={(event) => setAuthEmail(event.target.value)}
-              className="w-full border rounded p-2"
-            />
-            <input
-              type="password"
-              placeholder="Senha"
-              value={authPassword}
-              onChange={(event) => setAuthPassword(event.target.value)}
-              className="w-full border rounded p-2"
-            />
+            <input className="sa-input" type="email" placeholder="Email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} style={inputStyle} />
+            <input className="sa-input" type="password" placeholder="Senha" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} style={inputStyle} />
             <Button onClick={handleAuthSubmit} disabled={isAuthPending} className="w-full gap-2">
               {authMode === "signup" ? <UserPlus className="size-4" /> : <LogIn className="size-4" />}
               {authMode === "signup" ? "Criar conta" : "Entrar"}
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => window.location.href = getLoginUrl()}
-              className="w-full"
-            >
+            <Button variant="outline" onClick={() => (window.location.href = getLoginUrl())} className="w-full">
               Entrar com login externo
             </Button>
           </div>
@@ -950,492 +1052,854 @@ export default function Home() {
     );
   }
 
+  /* ================================================================ *
+   *  Derived view state
+   * ================================================================ */
+  const isIsak = activeApp === "isak" || activeApp === "isakTutorial";
+  const isTutorial = activeApp === "isakTutorial";
+  const tutorialPointsStep = isTutorial && isakTutorialStep === "points";
+  const isakCollect = (activeApp === "isak" || (isTutorial && isakTutorialStep === "measurements")) && !isakReview;
+  const reviewScreen = (activeApp === "antropo" && antropoReview) || (isIsak && isakReview);
+  const antropoCollect = activeApp === "antropo" && !antropoReview;
+
+  const headerInfo: Record<string, { kicker: string; title: string }> = {
+    home: { kicker: "", title: "PORTAL SAÚDE DE ATLETA" },
+    antropo: { kicker: "Coleta de campo", title: "Antropometria" },
+    fpm: { kicker: "Coleta de campo", title: "Força de Preensão" },
+    isak: { kicker: "Coleta de campo", title: "Antropometria ISAK 1" },
+    isakTutorial: { kicker: "Modo guiado", title: "ISAK Tutorial" },
+  };
+  const header = headerInfo[activeApp] ?? headerInfo.home;
+
+  const isakFilled = activeIsakFields.filter((f) => {
+    const v = isakInputs[f.key];
+    return v !== undefined && v !== "" && !isNaN(parseFloat(v));
+  }).length;
+  const isakProgressPct = Math.round((isakFilled / activeIsakFields.length) * 100);
+
+  const isakInputIds = activeIsakFields.map((f) => `inp-${f.key}`);
+  const antropoInputIds = antropoFields.map((f) => `a-${f.key}`);
+  const fpmInputIds = ["f-right", "f-left"];
+
+  const showActionBar = antropoCollect || activeApp === "fpm" || tutorialPointsStep || isakCollect || reviewScreen;
+  const counterBottom = showActionBar ? 92 : 24;
+
+  function roundDots(round: number, total = 3) {
+    return Array.from({ length: total }, (_, i) => {
+      const n = i + 1;
+      return n < round ? C.teal : n === round ? C.navy : "#D7DDE6";
+    });
+  }
+
+  /* ================================================================ */
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="bg-slate-900 text-white p-4 sticky top-0 z-30">
-        <div className="max-w-4xl mx-auto flex justify-between items-center">
-          <h1 className="text-xl font-bold">Portal Saúde de Atleta</h1>
-          <div className="flex items-center gap-4">
-            {hasUnsavedChanges && activeApp !== "home" && (
-              <span className="text-yellow-300 text-sm font-semibold">● Alterações não salvas</span>
-            )}
-            <div className="text-sm">{user?.name ?? (isStaticPages ? "Modo público" : "")}</div>
+    <div style={{ minHeight: "100vh", display: "flex", justifyContent: "center", background: "#E7EBF1", fontFamily: FONT_BODY, color: C.ink }}>
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 480,
+          minHeight: "100vh",
+          background: C.surface,
+          position: "relative",
+          display: "flex",
+          flexDirection: "column",
+          boxShadow: "0 0 60px rgba(20,32,58,.10)",
+        }}
+      >
+        {/* ---------- sticky top stack ---------- */}
+        <div style={{ position: "sticky", top: 0, zIndex: 20 }}>
+          <div style={{ background: C.navy, color: "#fff", padding: "18px 18px 16px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, minHeight: 34 }}>
+              {activeApp !== "home" && (
+                <button onClick={handleCancel} className="sa-tap" aria-label="Voltar" style={iconBtnStyle}>
+                  <ChevronLeft size={18} />
+                </button>
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {header.kicker && (
+                  <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: "#7FE3D6", fontWeight: 700, fontFamily: FONT_HEAD }}>
+                    {header.kicker}
+                  </div>
+                )}
+                <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-.01em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {header.title}
+                </div>
+              </div>
+              <div
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 11,
+                  background: "rgba(255,255,255,.08)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontFamily: FONT_HEAD,
+                  fontWeight: 700,
+                  fontSize: 13,
+                  color: "#9FB0CC",
+                }}
+                title={user?.name ?? (isStaticPages ? "Modo público" : "")}
+              >
+                {(user?.name ?? "SA").slice(0, 2).toUpperCase()}
+              </div>
+            </div>
           </div>
+
+          {/* ISAK / tutorial sticky progress */}
+          {isakCollect && (
+            <div style={{ background: C.surface, borderBottom: `1px solid #E7EBF1`, boxShadow: "0 8px 16px rgba(20,32,58,.06)", padding: "11px 18px 12px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 9 }}>
+                <div style={{ fontSize: 14, fontWeight: 800 }}>
+                  Rodada {isakRound} <span style={{ color: C.faint, fontWeight: 600 }}>de 3</span>
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {roundDots(isakRound).map((color, i) => (
+                    <span key={i} style={{ width: 24, height: 6, borderRadius: 99, background: color }} />
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: C.muted, display: "flex", alignItems: "center", gap: 6 }}>
+                  <ArrowDown size={13} color={C.teal} /> Dorsal → ventral, de cima p/ baixo
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 800, fontFamily: FONT_HEAD, color: C.teal }}>
+                  {isakFilled}/{activeIsakFields.length}
+                </span>
+              </div>
+              <div style={{ height: 7, borderRadius: 99, background: "#EEF1F5", overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${isakProgressPct}%`, background: "linear-gradient(90deg,#0E9C8E,#2BC4A8)", borderRadius: 99, transition: "width .3s ease" }} />
+              </div>
+            </div>
+          )}
         </div>
-      </header>
 
-      <main className="max-w-4xl mx-auto p-4 md:p-6">
-        {activeApp === "home" && (
-          <div>
-            <h2 className="text-2xl font-bold mb-6">Selecione o Protocolo</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Button
-                onClick={() => {
-                  setActiveApp("antropo");
-                  resetAntropo();
-                  resetParticipant();
-                }}
-                className="h-32 justify-start bg-slate-900 p-5 text-left text-lg hover:bg-slate-800"
-              >
-                <span className="flex items-center gap-4">
-                  <Ruler className="size-7" />
-                  <span>Antropometria</span>
-                </span>
-              </Button>
-              <Button
-                onClick={() => {
-                  setActiveApp("fpm");
-                  resetFpm();
-                  resetParticipant();
-                }}
-                className="h-32 justify-start bg-slate-900 p-5 text-left text-lg hover:bg-slate-800"
-              >
-                <span className="flex items-center gap-4">
-                  <Dumbbell className="size-7" />
-                  <span>Força de Preensão Manual</span>
-                </span>
-              </Button>
-              <Button
-                onClick={() => {
-                  setActiveApp("isak");
-                  resetIsak();
-                  resetParticipant();
-                }}
-                className="h-32 justify-start bg-slate-900 p-5 text-left text-lg hover:bg-slate-800"
-              >
-                <span className="flex items-center gap-4">
-                  <ClipboardList className="size-7" />
-                  <span>Antropometria ISAK 1</span>
-                </span>
-              </Button>
-              <Button
-                onClick={() => {
-                  setActiveApp("isakTutorial");
-                  startIsakTutorial();
-                  resetParticipant();
-                }}
-                className="h-32 justify-start bg-slate-900 p-5 text-left text-lg hover:bg-slate-800"
-              >
-                <span className="flex items-center gap-4">
-                  <GraduationCap className="size-7" />
-                  <span>ISAK Tutorial</span>
-                </span>
-              </Button>
-              <Button
-                asChild
-                variant="outline"
-                className="h-32 justify-start border-slate-300 bg-white p-5 text-left text-lg text-slate-900 hover:bg-slate-100"
-              >
-                <a
-                  href="https://ultrakcalc.github.io/UltraKcalc/index.html"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <span className="flex items-center gap-4">
-                    <Calculator className="size-7" />
-                    <span>UltraKcalc</span>
-                    <ExternalLink className="size-5 text-slate-500" />
+        {/* ---------- body ---------- */}
+        <div style={{ flex: 1 }}>
+          {/* ===== HOME ===== */}
+          {activeApp === "home" && (
+            <div style={{ padding: "22px 18px 40px" }}>
+              <div style={{ fontSize: 11, letterSpacing: ".14em", textTransform: "uppercase", color: C.faint, fontWeight: 700, margin: "6px 4px 10px" }}>
+                Protocolos
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <MenuCard
+                  icon={<Ruler size={24} />}
+                  accent="teal"
+                  title="Antropometria"
+                  subtitle="3 perímetros · 3 rodadas · ETM"
+                  onClick={() => {
+                    setActiveApp("antropo");
+                    resetAntropo();
+                    resetParticipant();
+                  }}
+                />
+                <MenuCard
+                  icon={<Dumbbell size={24} />}
+                  accent="indigo"
+                  title="Força de Preensão Manual"
+                  subtitle="Direito e esquerdo · 3 medidas"
+                  onClick={() => {
+                    setActiveApp("fpm");
+                    resetFpm();
+                    resetParticipant();
+                  }}
+                />
+                <MenuCard
+                  icon={<ClipboardList size={24} />}
+                  accent="teal"
+                  title="Antropometria ISAK 1"
+                  subtitle="Dobras + perímetros · sentido padronizado"
+                  onClick={() => {
+                    setActiveApp("isak");
+                    resetIsak();
+                    resetParticipant();
+                  }}
+                />
+                <MenuCard
+                  icon={<GraduationCap size={24} />}
+                  accent="indigo"
+                  title="ISAK Tutorial"
+                  subtitle="Pontos anatômicos + guia passo a passo"
+                  onClick={() => {
+                    setActiveApp("isakTutorial");
+                    startIsakTutorial();
+                    resetParticipant();
+                  }}
+                />
+              </div>
+
+              <div style={{ fontSize: 11, letterSpacing: ".14em", textTransform: "uppercase", color: C.faint, fontWeight: 700, margin: "22px 4px 10px" }}>
+                Ferramentas externas
+              </div>
+              <div style={{ display: "flex", gap: 12 }}>
+                <a href="https://ultrakcalc.github.io/UltraKcalc/index.html" target="_blank" rel="noopener noreferrer" className="sa-tap" style={toolCardStyle}>
+                  <Calculator size={22} color={C.indigo} />
+                  <span style={{ display: "block", fontSize: 14, fontWeight: 700, marginTop: 8 }}>
+                    UltraKcalc <ExternalLink size={12} style={{ display: "inline", verticalAlign: "middle", color: C.faint }} />
                   </span>
+                  <span style={{ display: "block", fontSize: 12, color: C.faint }}>Composição corporal</span>
                 </a>
-              </Button>
-              <Button
-                asChild
-                variant="outline"
-                className="h-32 justify-start border-slate-300 bg-white p-5 text-left text-lg text-slate-900 hover:bg-slate-100"
-              >
-                <a
-                  href="https://marcuscattem.github.io/aiMET/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <span className="flex items-center gap-4">
-                    <Activity className="size-7" />
-                    <span>METCalc</span>
-                    <ExternalLink className="size-5 text-slate-500" />
+                <a href="https://marcuscattem.github.io/aiMET/" target="_blank" rel="noopener noreferrer" className="sa-tap" style={toolCardStyle}>
+                  <Activity size={22} color={C.teal} />
+                  <span style={{ display: "block", fontSize: 14, fontWeight: 700, marginTop: 8 }}>
+                    METCalc <ExternalLink size={12} style={{ display: "inline", verticalAlign: "middle", color: C.faint }} />
                   </span>
+                  <span style={{ display: "block", fontSize: 12, color: C.faint }}>Gasto energético</span>
                 </a>
-              </Button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {activeApp === "antropo" && (
-          <div className="bg-white p-6 rounded-lg border">
-            <h2 className="text-xl font-bold mb-4">Antropometria</h2>
-            <div className="space-y-4">
-              <input
-                type="text"
-                placeholder="ID do Participante"
-                value={participantId}
-                onChange={(e) => setParticipantId(e.target.value)}
-                className="w-full border rounded p-2"
-              />
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full border rounded p-2"
-              />
-              {!antropoReview && antropoRound <= 3 && (
-                <>
-                  <h3 className="font-semibold">Rodada {antropoRound} de 3</h3>
-                  <div className="bg-blue-50 p-3 rounded text-sm text-blue-800">
-                    Dados salvos: {antropoData.braco.length > 0 && `Rodadas: ${antropoData.braco.length}`}
-                  </div>
-                  <input
-                    type="number"
-                    step="0.1"
-                    placeholder="Braço Direito (cm)"
-                    value={antropoInputs.braco}
-                    onChange={(e) => setAntropoInputs({ ...antropoInputs, braco: e.target.value })}
-                    className="w-full border rounded p-2"
+          {/* ===== PARTICIPANT (shared) ===== */}
+          {activeApp !== "home" && !tutorialPointsStep && (
+            <div style={{ padding: "18px 18px 0" }}>
+              <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: 14, boxShadow: "0 2px 10px rgba(20,32,58,.04)", display: "flex", gap: 12 }}>
+                <label style={{ flex: 1.4, minWidth: 0 }}>
+                  <span style={fieldLabelStyle}>ID do participante</span>
+                  <input className="sa-input" value={participantId} onChange={(e) => setParticipantId(e.target.value)} placeholder="Ex.: ATL-014" style={inputStyle} />
+                </label>
+                <label style={{ flex: 1, minWidth: 0 }}>
+                  <span style={fieldLabelStyle}>Data</span>
+                  <input className="sa-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle} />
+                </label>
+              </div>
+            </div>
+          )}
+
+          {/* ===== ANTROPOMETRIA collect ===== */}
+          {antropoCollect && (
+            <div style={{ padding: "16px 18px 130px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "8px 2px 12px" }}>
+                <div style={{ fontSize: 15, fontWeight: 800 }}>
+                  Rodada {antropoRound} <span style={{ color: C.faint, fontWeight: 600 }}>de 3</span>
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {roundDots(antropoRound).map((color, i) => (
+                    <span key={i} style={{ width: 26, height: 6, borderRadius: 99, background: color }} />
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {antropoFields.map((f) => (
+                  <SimpleRow
+                    key={f.key}
+                    label={f.label}
+                    region={f.region}
+                    unit="cm"
+                    accent="teal"
+                    inputId={`a-${f.key}`}
+                    value={antropoInputs[f.key]}
+                    onChange={(v) => setAntropoInputs({ ...antropoInputs, [f.key]: v })}
+                    onKeyDown={makeEnterAdvance(antropoInputIds, `a-${f.key}`, handleAntropoRound)}
                   />
-                  <input
-                    type="number"
-                    step="0.1"
-                    placeholder="Cintura (cm)"
-                    value={antropoInputs.cintura}
-                    onChange={(e) => setAntropoInputs({ ...antropoInputs, cintura: e.target.value })}
-                    className="w-full border rounded p-2"
-                  />
-                  <input
-                    type="number"
-                    step="0.1"
-                    placeholder="Panturrilha Direita (cm)"
-                    value={antropoInputs.panturrilha}
-                    onChange={(e) => setAntropoInputs({ ...antropoInputs, panturrilha: e.target.value })}
-                    className="w-full border rounded p-2"
-                  />
-                  <div className="flex gap-4">
-                    <Button variant="outline" onClick={handleCancel}>
-                      Cancelar
-                    </Button>
-                    <Button onClick={handleAntropoRound} disabled={saveAntropoMutation.isPending}>
-                      {antropoRound === 3 ? "Revisar ETM" : "Próxima Rodada"}
-                    </Button>
-                  </div>
-                </>
-              )}
-              {antropoReview && (
-                <>
-                  <h3 className="font-semibold">Revisão do ETM</h3>
-                  <div className="overflow-x-auto border rounded">
-                    <table className="w-full text-sm">
-                      <thead className="bg-slate-100">
-                        <tr>
-                          <th className="text-left p-2">Medida</th>
-                          <th className="text-left p-2">Rodada 1</th>
-                          <th className="text-left p-2">Rodada 2</th>
-                          <th className="text-left p-2">Rodada 3</th>
-                          <th className="text-left p-2">ETM</th>
-                          <th className="text-left p-2">Critério</th>
-                          <th className="text-left p-2">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {antropoEtmRows.map((row) => (
-                          <tr key={row.key} className="border-t">
-                            <td className="p-2 font-medium">{row.label}</td>
-                            {row.values.map((value, index) => (
-                              <td key={`${row.key}-${index}`} className="p-2 min-w-28">
-                                <input
-                                  type="number"
-                                  step="0.1"
-                                  value={Number.isFinite(value) ? value : ""}
-                                  onChange={(event) => updateAntropoReviewValue(row.key, index, event.target.value)}
-                                  className="w-24 border rounded p-2"
-                                  aria-label={`${row.label} rodada ${index + 1}`}
-                                />
-                              </td>
-                            ))}
-                            <td className="p-2">{formatNumber(row.etmPercent)}%</td>
-                            <td className="p-2">&lt; {row.limit}%</td>
-                            <td className={`p-2 font-semibold ${row.isValid ? "text-green-700" : "text-red-700"}`}>
-                              {row.isValid ? "OK" : "Ajustar"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  {antropoHasInvalidEtm && (
-                    <label className="flex items-start gap-3 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-                      <input
-                        type="checkbox"
-                        checked={antropoEtmOverrideConfirmed}
-                        onChange={(event) => setAntropoEtmOverrideConfirmed(event.target.checked)}
-                        className="mt-1"
-                      />
-                      <span>
-                        Confirmo que desejo salvar esta avaliação mesmo com ETM fora do alvo.
-                      </span>
-                    </label>
-                  )}
-                  <div className="flex gap-4">
-                    <Button variant="outline" onClick={handleCancel}>
-                      Cancelar
-                    </Button>
-                    <Button
-                      onClick={handleSaveAntropoReview}
-                      disabled={
-                        saveAntropoMutation.isPending ||
-                        (antropoHasInvalidEtm && !antropoEtmOverrideConfirmed)
-                      }
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ===== FPM ===== */}
+          {activeApp === "fpm" && (
+            <div style={{ padding: "16px 18px 130px" }}>
+              <div style={{ display: "flex", gap: 10, margin: "6px 0 14px" }}>
+                <label style={{ flex: 1 }}>
+                  <span style={fieldLabelStyle}>Mão dominante</span>
+                  <select value={fpmDominantHand} onChange={(e) => setFpmDominantHand(e.target.value)} className="sa-input" style={inputStyle}>
+                    <option value="">Selecione</option>
+                    <option value="Direita">Direita</option>
+                    <option value="Esquerda">Esquerda</option>
+                  </select>
+                </label>
+                <label style={{ flex: 1 }}>
+                  <span style={fieldLabelStyle}>Perna melhor</span>
+                  <select value={fpmBestLeg} onChange={(e) => setFpmBestLeg(e.target.value)} className="sa-input" style={inputStyle}>
+                    <option value="">Selecione</option>
+                    <option value="Direita">Direita</option>
+                    <option value="Esquerda">Esquerda</option>
+                  </select>
+                </label>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "4px 2px 12px" }}>
+                <div style={{ fontSize: 15, fontWeight: 800 }}>
+                  {fpmRound}ª medida <span style={{ color: C.faint, fontWeight: 600 }}>de 3</span>
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {roundDots(fpmRound).map((color, i) => (
+                    <span key={i} style={{ width: 26, height: 6, borderRadius: 99, background: color }} />
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <SimpleRow
+                  label="Lado direito"
+                  region="Dinamômetro"
+                  unit="kgf"
+                  accent="indigo"
+                  inputId="f-right"
+                  value={fpmInputs.right}
+                  onChange={(v) => setFpmInputs({ ...fpmInputs, right: v })}
+                  onKeyDown={makeEnterAdvance(fpmInputIds, "f-right", handleFpmRound)}
+                />
+                <SimpleRow
+                  label="Lado esquerdo"
+                  region="Dinamômetro"
+                  unit="kgf"
+                  accent="indigo"
+                  inputId="f-left"
+                  value={fpmInputs.left}
+                  onChange={(v) => setFpmInputs({ ...fpmInputs, left: v })}
+                  onKeyDown={makeEnterAdvance(fpmInputIds, "f-left", handleFpmRound)}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* ===== TUTORIAL points ===== */}
+          {tutorialPointsStep && (
+            <div style={{ padding: "16px 18px 130px" }}>
+              <div style={{ padding: "18px 18px 0" }} />
+              <div style={{ background: C.indigoSoft, border: "1px solid #DCE0F6", borderRadius: 14, padding: "12px 14px", margin: "6px 0 14px", display: "flex", gap: 10 }}>
+                <Info size={18} color={C.indigo} style={{ flex: "none", marginTop: 1 }} />
+                <span style={{ fontSize: 13, color: "#3B4663", lineHeight: 1.5 }}>
+                  Confirme a marcação de cada ponto anatômico antes de iniciar a coleta. Todos são obrigatórios.
+                </span>
+              </div>
+              <div style={{ fontSize: 11, letterSpacing: ".14em", textTransform: "uppercase", color: C.faint, fontWeight: 700, margin: "0 2px 10px" }}>
+                Pontos anatômicos · {isakTutorialPoints.filter((p) => isakTutorialCheckedPoints[p.name]).length}/{isakTutorialPoints.length}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+                {isakTutorialPoints.map((p) => {
+                  const checked = Boolean(isakTutorialCheckedPoints[p.name]);
+                  return (
+                    <button
+                      key={p.name}
+                      onClick={() => toggleTutorialPoint(p.name, !checked)}
+                      className="sa-tap"
+                      style={{
+                        textAlign: "left",
+                        cursor: "pointer",
+                        background: checked ? C.indigoSoft : "#fff",
+                        border: `1.5px solid ${checked ? "#C7CEF2" : C.border}`,
+                        borderRadius: 14,
+                        padding: "13px 14px",
+                        display: "flex",
+                        gap: 12,
+                        alignItems: "flex-start",
+                      }}
                     >
-                      Salvar avaliação
-                    </Button>
-                  </div>
-                </>
-              )}
+                      <span
+                        style={{
+                          flex: "none",
+                          width: 24,
+                          height: 24,
+                          borderRadius: 8,
+                          border: `2px solid ${checked ? C.indigo : "#CCD3DE"}`,
+                          background: checked ? C.indigo : "#fff",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          marginTop: 1,
+                        }}
+                      >
+                        {checked && <Check size={14} color="#fff" strokeWidth={3.2} />}
+                      </span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: "block", fontSize: 15, fontWeight: 700, letterSpacing: "-.01em" }}>{p.name}</span>
+                        <span style={{ display: "block", fontSize: 12.5, color: C.muted, lineHeight: 1.45, marginTop: 2 }}>{p.description}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {activeApp === "fpm" && (
-          <div className="bg-white p-6 rounded-lg border">
-            <h2 className="text-xl font-bold mb-4">Força de Preensão Manual</h2>
-            <div className="space-y-4">
-              <input
-                type="text"
-                placeholder="ID do Participante"
-                value={participantId}
-                onChange={(e) => setParticipantId(e.target.value)}
-                className="w-full border rounded p-2"
-              />
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full border rounded p-2"
-              />
-              <select
-                value={fpmDominantHand}
-                onChange={(e) => setFpmDominantHand(e.target.value)}
-                className="w-full border rounded p-2"
-              >
-                <option value="">Mão Dominante</option>
-                <option value="Direita">Direita</option>
-                <option value="Esquerda">Esquerda</option>
-              </select>
-              <select
-                value={fpmBestLeg}
-                onChange={(e) => setFpmBestLeg(e.target.value)}
-                className="w-full border rounded p-2"
-              >
-                <option value="">Perna Melhor</option>
-                <option value="Direita">Direita</option>
-                <option value="Esquerda">Esquerda</option>
-              </select>
-              {fpmRound <= 3 && (
-                <>
-                  <h3 className="font-semibold">{fpmRound}ª Medida</h3>
-                  <div className="bg-blue-50 p-3 rounded text-sm text-blue-800">
-                    Dados salvos: {fpmData.right.length > 0 && `Medidas: ${fpmData.right.length}`}
-                  </div>
-                  <input
-                    type="number"
-                    step="0.1"
-                    placeholder="Lado Direito (kgf)"
-                    value={fpmInputs.right}
-                    onChange={(e) => setFpmInputs({ ...fpmInputs, right: e.target.value })}
-                    className="w-full border rounded p-2"
-                  />
-                  <input
-                    type="number"
-                    step="0.1"
-                    placeholder="Lado Esquerdo (kgf)"
-                    value={fpmInputs.left}
-                    onChange={(e) => setFpmInputs({ ...fpmInputs, left: e.target.value })}
-                    className="w-full border rounded p-2"
-                  />
-                  <div className="flex gap-4">
-                    <Button variant="outline" onClick={handleCancel}>
-                      Cancelar
-                    </Button>
-                    <Button onClick={handleFpmRound} disabled={saveFpmMutation.isPending}>
-                      {fpmRound === 3 ? "Finalizar e Salvar" : "Próxima Medida"}
-                    </Button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        )}
-
-        {(activeApp === "isak" || activeApp === "isakTutorial") && (
-          <div className="bg-white p-6 rounded-lg border">
-            <h2 className="text-xl font-bold mb-4">
-              {activeApp === "isakTutorial" ? "ISAK Tutorial" : "Antropometria ISAK 1"}
-            </h2>
-            <div className="space-y-4">
-              <input
-                type="text"
-                placeholder="ID do Participante"
-                value={participantId}
-                onChange={(e) => setParticipantId(e.target.value)}
-                className="w-full border rounded p-2"
-              />
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full border rounded p-2"
-              />
+          {/* ===== ISAK / TUTORIAL measurements ===== */}
+          {isakCollect && (
+            <div style={{ padding: "16px 18px 130px" }}>
+              {/* expand toggle */}
               {isakCanChangeExpandedSkinfolds && (
-                <label className="flex items-start gap-3 rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800">
+                <button
+                  onClick={() => setIsakExpandedSkinfolds((v) => !v)}
+                  className="sa-tap"
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    background: isakExpandedSkinfolds ? C.indigoSoft : "#fff",
+                    border: `1.5px solid ${isakExpandedSkinfolds ? "#C7CEF2" : C.border}`,
+                    borderRadius: 14,
+                    padding: "12px 14px",
+                    display: "flex",
+                    gap: 11,
+                    alignItems: "center",
+                    marginBottom: 14,
+                  }}
+                >
+                  <span style={{ flex: "none", width: 38, height: 22, borderRadius: 99, background: isakExpandedSkinfolds ? C.indigo : "#D7DDE6", position: "relative", transition: "background .2s" }}>
+                    <span style={{ position: "absolute", top: 2, left: isakExpandedSkinfolds ? 18 : 2, width: 18, height: 18, borderRadius: 99, background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.2)", transition: "left .2s" }} />
+                  </span>
+                  <span style={{ flex: 1 }}>
+                    <span style={{ display: "block", fontSize: 14, fontWeight: 700 }}>Avaliação expandida</span>
+                    <span style={{ display: "block", fontSize: 12, color: C.muted }}>Inclui dobras torácica e axilar média</span>
+                  </span>
+                </button>
+              )}
+
+              {/* DOBRAS */}
+              <SectionHeader accent="teal" label="Dobras cutâneas" meta={`${activeDobras.length} dobras · mm`} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 9, marginBottom: 20 }}>
+                {activeDobras.map((f, i) => (
+                  <MeasureRow
+                    key={f.key}
+                    num={i + 1}
+                    field={f}
+                    accent="teal"
+                    showDescription={isTutorial && isakRound === 1}
+                    value={isakInputs[f.key]}
+                    onChange={(v) => setIsakInputs({ ...isakInputs, [f.key]: v })}
+                    onKeyDown={makeEnterAdvance(isakInputIds, `inp-${f.key}`, handleIsakRound)}
+                  />
+                ))}
+              </div>
+
+              {/* PERÍMETROS */}
+              <SectionHeader accent="indigo" label="Perímetros" meta={`${isakPerimFields.length} perímetros · cm`} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+                {isakPerimFields.map((f, i) => (
+                  <MeasureRow
+                    key={f.key}
+                    num={activeDobras.length + i + 1}
+                    field={f as unknown as IsakField}
+                    accent="indigo"
+                    showDescription={isTutorial && isakRound === 1}
+                    value={isakInputs[f.key]}
+                    onChange={(v) => setIsakInputs({ ...isakInputs, [f.key]: v })}
+                    onKeyDown={makeEnterAdvance(isakInputIds, `inp-${f.key}`, handleIsakRound)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ===== REVIEW (antropo + isak) ===== */}
+          {reviewScreen && (
+            <div style={{ padding: "16px 18px 130px" }}>
+              <div style={{ margin: "6px 2px 14px" }}>
+                <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: "-.01em" }}>Revisão do ETM</div>
+                <div style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>
+                  Confira as 3 rodadas. O erro técnico de medida (ETM%) deve ficar abaixo do critério.
+                </div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+                {(activeApp === "antropo" ? antropoEtmRows : isakEtmRows).map((row) => {
+                  const valid = row.isValid;
+                  return (
+                    <div key={row.key} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "12px 13px", boxShadow: "0 1px 6px rgba(20,32,58,.03)" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 9 }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-.01em" }}>{row.label}</span>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 800,
+                            fontFamily: FONT_HEAD,
+                            padding: "4px 9px",
+                            borderRadius: 8,
+                            background: valid ? C.tealSoft : C.dangerSoft,
+                            color: valid ? C.tealDark : C.danger,
+                          }}
+                        >
+                          {valid ? "OK" : "Ajustar"}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", gap: 7, alignItems: "flex-end" }}>
+                        {[0, 1, 2].map((idx) => (
+                          <label key={idx} style={{ flex: 1 }}>
+                            <span style={{ display: "block", fontSize: 10, fontWeight: 700, color: C.faint, letterSpacing: ".04em", marginBottom: 3 }}>R{idx + 1}</span>
+                            <input
+                              className="sa-input sa-num"
+                              type="number"
+                              step="0.1"
+                              value={Number.isFinite(row.values[idx]) ? row.values[idx] : ""}
+                              onChange={(e) =>
+                                activeApp === "antropo"
+                                  ? updateAntropoReviewValue(row.key as (typeof antropoFields)[number]["key"], idx, e.target.value)
+                                  : updateIsakReviewValue(row.key, idx, e.target.value)
+                              }
+                              style={{ width: "100%", textAlign: "center", border: `1px solid #E0E5EC`, borderRadius: 10, padding: "9px 4px", fontSize: 15, fontWeight: 700, fontFamily: FONT_HEAD, color: C.ink, background: "#FBFCFD", outline: "none" }}
+                            />
+                          </label>
+                        ))}
+                        <div style={{ flex: "none", textAlign: "right", minWidth: 70, paddingBottom: 2 }}>
+                          <span style={{ display: "block", fontSize: 10, fontWeight: 700, color: C.faint, letterSpacing: ".04em" }}>ETM · &lt;{row.limit}%</span>
+                          <span style={{ display: "block", fontSize: 16, fontWeight: 800, fontFamily: FONT_HEAD, color: valid ? C.tealDark : C.danger }}>
+                            {Number.isFinite(row.etmPercent) ? `${formatNumber(row.etmPercent)}%` : "—"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {(activeApp === "antropo" ? antropoHasInvalidEtm : isakHasInvalidEtm) && (
+                <label
+                  className="sa-tap"
+                  style={{ display: "flex", cursor: "pointer", marginTop: 14, background: "#FEF6E7", border: "1.5px solid #F4D58A", borderRadius: 14, padding: "13px 14px", gap: 11, alignItems: "flex-start" }}
+                >
                   <input
                     type="checkbox"
-                    checked={isakExpandedSkinfolds}
-                    onChange={(event) => setIsakExpandedSkinfolds(event.target.checked)}
-                    className="mt-1"
+                    checked={activeApp === "antropo" ? antropoEtmOverrideConfirmed : isakEtmOverrideConfirmed}
+                    onChange={(e) => (activeApp === "antropo" ? setAntropoEtmOverrideConfirmed(e.target.checked) : setIsakEtmOverrideConfirmed(e.target.checked))}
+                    style={{ marginTop: 2, width: 18, height: 18, accentColor: "#E0A92E" }}
                   />
-                  <span className="font-medium">
-                    Expandir avaliação para dobras torácica e axilar média
+                  <span style={{ fontSize: 13, color: "#8A6A1F", lineHeight: 1.45, fontWeight: 600 }}>
+                    Confirmo que desejo salvar esta avaliação mesmo com ETM fora do alvo.
                   </span>
                 </label>
               )}
-              {activeApp === "isakTutorial" && isakTutorialStep === "points" && (
-                <>
-                  <h3 className="font-semibold">Pontos anatômicos ISAK</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {isakTutorialPoints.map((point) => (
-                      <label key={point.name} className="flex items-start gap-3 rounded border p-3 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(isakTutorialCheckedPoints[point.name])}
-                          onChange={(event) => toggleTutorialPoint(point.name, event.target.checked)}
-                          className="mt-1"
-                        />
-                        <span>
-                          <span className="block font-semibold">{point.name}</span>
-                          <span className="block text-slate-600">{point.description}</span>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                  <div className="flex gap-4">
-                    <Button variant="outline" onClick={handleCancel}>
-                      Cancelar
-                    </Button>
-                    <Button
-                      onClick={() => setIsakTutorialStep("measurements")}
-                      disabled={!allTutorialPointsChecked}
-                    >
-                      Iniciar 1ª rodada
-                    </Button>
-                  </div>
-                </>
-              )}
-              {(activeApp === "isak" || isakTutorialStep === "measurements") && !isakReview && isakRound <= 3 && (
-                <>
-                  <h3 className="font-semibold">Rodada {isakRound} de 3</h3>
-                  <div className="bg-blue-50 p-3 rounded text-sm text-blue-800">
-                    Dados salvos: {Object.keys(isakData).length > 0 && `Rodadas: ${isakData[Object.keys(isakData)[0]]?.length || 0}`}
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {activeIsakFields.map((field) => (
-                      <div key={field.key} className="space-y-1">
-                        <input
-                          type="number"
-                          step="0.1"
-                          placeholder={field.label}
-                          value={isakInputs[field.key] || ""}
-                          onChange={(e) => setIsakInputs({ ...isakInputs, [field.key]: e.target.value })}
-                          className="w-full border rounded p-2"
-                        />
-                        {activeApp === "isakTutorial" && isakRound === 1 && (
-                          <p className="text-xs leading-relaxed text-slate-600">
-                            {field.description}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex gap-4">
-                    <Button variant="outline" onClick={handleCancel}>
-                      Cancelar
-                    </Button>
-                    <Button onClick={handleIsakRound} disabled={saveIsakMutation.isPending}>
-                      {isakRound === 3 ? "Revisar ETM" : "Próxima Rodada"}
-                    </Button>
-                  </div>
-                </>
-              )}
-              {(activeApp === "isak" || isakTutorialStep === "measurements") && isakReview && (
-                <>
-                  <h3 className="font-semibold">Revisão do ETM</h3>
-                  <div className="overflow-x-auto border rounded">
-                    <table className="w-full text-sm">
-                      <thead className="bg-slate-100">
-                        <tr>
-                          <th className="text-left p-2">Medida</th>
-                          <th className="text-left p-2">Rodada 1</th>
-                          <th className="text-left p-2">Rodada 2</th>
-                          <th className="text-left p-2">Rodada 3</th>
-                          <th className="text-left p-2">ETM</th>
-                          <th className="text-left p-2">Critério</th>
-                          <th className="text-left p-2">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {isakEtmRows.map((row) => (
-                          <tr key={row.key} className="border-t">
-                            <td className="p-2 font-medium min-w-56">{row.label}</td>
-                            {row.values.map((value, index) => (
-                              <td key={`${row.key}-${index}`} className="p-2 min-w-28">
-                                <input
-                                  type="number"
-                                  step="0.1"
-                                  value={Number.isFinite(value) ? value : ""}
-                                  onChange={(event) => updateIsakReviewValue(row.key, index, event.target.value)}
-                                  className="w-24 border rounded p-2"
-                                  aria-label={`${row.label} rodada ${index + 1}`}
-                                />
-                              </td>
-                            ))}
-                            <td className="p-2">{formatNumber(row.etmPercent)}%</td>
-                            <td className="p-2">&lt; {row.limit}%</td>
-                            <td className={`p-2 font-semibold ${row.isValid ? "text-green-700" : "text-red-700"}`}>
-                              {row.isValid ? "OK" : "Ajustar"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  {isakHasInvalidEtm && (
-                    <label className="flex items-start gap-3 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-                      <input
-                        type="checkbox"
-                        checked={isakEtmOverrideConfirmed}
-                        onChange={(event) => setIsakEtmOverrideConfirmed(event.target.checked)}
-                        className="mt-1"
-                      />
-                      <span>
-                        Confirmo que desejo salvar esta avaliação mesmo com ETM fora do alvo.
-                      </span>
-                    </label>
-                  )}
-                  <div className="flex gap-4">
-                    <Button variant="outline" onClick={handleCancel}>
-                      Cancelar
-                    </Button>
-                    <Button
-                      onClick={handleSaveIsakReview}
-                      disabled={
-                        saveIsakMutation.isPending ||
-                        (isakHasInvalidEtm && !isakEtmOverrideConfirmed)
-                      }
-                    >
-                      Salvar avaliação
-                    </Button>
-                  </div>
-                </>
-              )}
+            </div>
+          )}
+        </div>
+
+        {/* ---------- sticky action bar ---------- */}
+        {showActionBar && (
+          <div style={{ position: "sticky", bottom: 0, zIndex: 20, background: "linear-gradient(180deg, rgba(247,248,250,0) 0%, #F7F8FA 26%)", padding: "14px 18px 18px" }}>
+            <div style={{ display: "flex", gap: 11 }}>
+              <button onClick={handleCancel} className="sa-tap" style={secondaryBtnStyle}>
+                Cancelar
+              </button>
+              {(() => {
+                let label = "";
+                let onClick: () => void = () => {};
+                let color = C.teal;
+                if (antropoCollect) {
+                  label = antropoRound === 3 ? "Revisar ETM" : "Próxima rodada";
+                  onClick = handleAntropoRound;
+                  color = C.teal;
+                } else if (activeApp === "fpm") {
+                  label = fpmRound === 3 ? "Finalizar e salvar" : "Próxima medida";
+                  onClick = handleFpmRound;
+                  color = C.indigo;
+                } else if (tutorialPointsStep) {
+                  label = "Iniciar 1ª rodada";
+                  onClick = () => {
+                    if (!allTutorialPointsChecked) {
+                      toast.error("Marque todos os pontos anatômicos");
+                      return;
+                    }
+                    setIsakTutorialStep("measurements");
+                    focusInputSoon(`inp-${activeIsakFields[0].key}`);
+                  };
+                  color = C.indigo;
+                } else if (isakCollect) {
+                  label = isakRound === 3 ? "Revisar ETM" : "Próxima rodada";
+                  onClick = handleIsakRound;
+                  color = C.teal;
+                } else if (reviewScreen) {
+                  label = "Salvar avaliação";
+                  onClick = activeApp === "antropo" ? handleSaveAntropoReview : handleSaveIsakReview;
+                  color = C.teal;
+                }
+                const disabled =
+                  (reviewScreen &&
+                    activeApp === "antropo" &&
+                    antropoHasInvalidEtm &&
+                    !antropoEtmOverrideConfirmed) ||
+                  (reviewScreen && isIsak && isakHasInvalidEtm && !isakEtmOverrideConfirmed) ||
+                  (tutorialPointsStep && !allTutorialPointsChecked);
+                return (
+                  <button
+                    onClick={onClick}
+                    disabled={disabled}
+                    className="sa-tap"
+                    style={{
+                      flex: 1,
+                      cursor: disabled ? "not-allowed" : "pointer",
+                      border: "none",
+                      background: disabled ? "#AEB8C7" : color,
+                      color: "#fff",
+                      fontSize: 15,
+                      fontWeight: 800,
+                      padding: 14,
+                      borderRadius: 14,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      boxShadow: disabled ? "none" : "0 6px 16px rgba(14,156,142,.28)",
+                    }}
+                  >
+                    {label}
+                    <ArrowRight size={18} strokeWidth={2.6} />
+                  </button>
+                );
+              })()}
             </div>
           </div>
         )}
-      </main>
+
+        {/* ---------- floating daily counter ---------- */}
+        <div
+          style={{
+            position: "fixed",
+            left: "50%",
+            transform: "translateX(-50%)",
+            bottom: counterBottom,
+            zIndex: 45,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            background: C.navy,
+            color: "#fff",
+            padding: "9px 9px 9px 14px",
+            borderRadius: 99,
+            boxShadow: "0 8px 24px rgba(20,32,58,.28)",
+            border: "1px solid rgba(255,255,255,.08)",
+          }}
+        >
+          <CalendarCheck2 size={15} color="#7FE3D6" />
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#C4CEDE", letterSpacing: "-.01em" }}>
+            {evalCount === 1 ? "avaliação hoje" : "avaliações hoje"}
+          </span>
+          <span
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              minWidth: 28,
+              height: 28,
+              padding: "0 8px",
+              borderRadius: 99,
+              background: C.teal,
+              color: "#fff",
+              fontSize: 15,
+              fontWeight: 800,
+              fontFamily: FONT_HEAD,
+            }}
+          >
+            {evalCount}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================== *
+ *  Presentational helpers
+ * ================================================================== */
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  border: "1px solid #E0E5EC",
+  borderRadius: 11,
+  padding: "11px 12px",
+  fontSize: 15,
+  fontWeight: 600,
+  color: C.ink,
+  background: "#FBFCFD",
+  outline: "none",
+};
+
+const fieldLabelStyle: React.CSSProperties = {
+  display: "block",
+  fontSize: 11,
+  fontWeight: 700,
+  color: C.faint,
+  letterSpacing: ".08em",
+  textTransform: "uppercase",
+  marginBottom: 5,
+};
+
+const iconBtnStyle: React.CSSProperties = {
+  border: "none",
+  background: "rgba(255,255,255,.10)",
+  color: "#fff",
+  width: 34,
+  height: 34,
+  borderRadius: 11,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  cursor: "pointer",
+  flex: "none",
+};
+
+const toolCardStyle: React.CSSProperties = {
+  flex: 1,
+  textDecoration: "none",
+  color: "inherit",
+  border: `1px solid ${C.border}`,
+  background: "#fff",
+  borderRadius: 16,
+  padding: 14,
+};
+
+const secondaryBtnStyle: React.CSSProperties = {
+  flex: "none",
+  cursor: "pointer",
+  border: "1.5px solid #DCE1E9",
+  background: "#fff",
+  color: "#3B4663",
+  fontSize: 15,
+  fontWeight: 700,
+  padding: "14px 20px",
+  borderRadius: 14,
+};
+
+function MenuCard({
+  icon,
+  title,
+  subtitle,
+  accent,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+  accent: "teal" | "indigo";
+  onClick: () => void;
+}) {
+  const soft = accent === "teal" ? C.tealSoft : C.indigoSoft;
+  const fg = accent === "teal" ? C.teal : C.indigo;
+  return (
+    <button
+      onClick={onClick}
+      className="sa-tap"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 15,
+        textAlign: "left",
+        cursor: "pointer",
+        border: `1px solid ${C.border}`,
+        background: "#fff",
+        borderRadius: 18,
+        padding: 16,
+        boxShadow: "0 2px 10px rgba(20,32,58,.04)",
+      }}
+    >
+      <span style={{ flex: "none", width: 48, height: 48, borderRadius: 14, background: soft, color: fg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {icon}
+      </span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: "block", fontSize: 16, fontWeight: 700, letterSpacing: "-.01em" }}>{title}</span>
+        <span style={{ display: "block", fontSize: 13, color: C.muted, marginTop: 1 }}>{subtitle}</span>
+      </span>
+      <ChevronRight size={20} color="#C2CAD6" strokeWidth={2.4} />
+    </button>
+  );
+}
+
+function SectionHeader({ accent, label, meta }: { accent: "teal" | "indigo"; label: string; meta: string }) {
+  const soft = accent === "teal" ? C.tealSoft : C.indigoSoft;
+  const fg = accent === "teal" ? C.tealDark : C.indigoDark;
+  const dot = accent === "teal" ? C.teal : C.indigo;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 9, margin: "4px 2px 10px" }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, background: soft, color: fg, fontSize: 11, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", padding: "5px 10px", borderRadius: 8, fontFamily: FONT_HEAD }}>
+        <span style={{ width: 7, height: 7, borderRadius: 99, background: dot }} />
+        {label}
+      </span>
+      <span style={{ fontSize: 12, color: "#AAB3C2", fontWeight: 600 }}>{meta}</span>
+    </div>
+  );
+}
+
+function SimpleRow({
+  label,
+  region,
+  unit,
+  accent,
+  inputId,
+  value,
+  onChange,
+  onKeyDown,
+}: {
+  label: string;
+  region: string;
+  unit: string;
+  accent: "teal" | "indigo";
+  inputId: string;
+  value: string | undefined;
+  onChange: (v: string) => void;
+  onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 16, padding: "13px 15px", display: "flex", alignItems: "center", gap: 13, boxShadow: "0 1px 6px rgba(20,32,58,.03)" }}>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: "block", fontSize: 15, fontWeight: 700, letterSpacing: "-.01em" }}>{label}</span>
+        <span style={{ display: "block", fontSize: 12, color: C.faint, marginTop: 1 }}>{region}</span>
+      </span>
+      <span style={{ position: "relative", flex: "none" }}>
+        <input
+          id={inputId}
+          className={accent === "teal" ? "sa-input sa-num" : "sa-input-indigo sa-num"}
+          type="number"
+          inputMode="decimal"
+          step="0.1"
+          placeholder="0,0"
+          value={value ?? ""}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={onKeyDown}
+          style={{ width: 104, textAlign: "right", border: "1.5px solid #E0E5EC", borderRadius: 12, padding: "12px 42px 12px 12px", fontSize: 17, fontWeight: 700, fontFamily: FONT_HEAD, color: C.ink, background: "#FBFCFD", outline: "none" }}
+        />
+        <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 700, color: "#AAB3C2", fontFamily: FONT_HEAD, pointerEvents: "none" }}>{unit}</span>
+      </span>
+    </div>
+  );
+}
+
+function MeasureRow({
+  num,
+  field,
+  accent,
+  showDescription,
+  value,
+  onChange,
+  onKeyDown,
+}: {
+  num: number;
+  field: IsakField;
+  accent: "teal" | "indigo";
+  showDescription: boolean;
+  value: string | undefined;
+  onChange: (v: string) => void;
+  onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+}) {
+  const filled = (value ?? "") !== "" && !isNaN(parseFloat(value ?? ""));
+  const soft = accent === "teal" ? C.tealSoft : C.indigoSoft;
+  const fg = accent === "teal" ? C.tealDark : C.indigoDark;
+  const barColor = filled ? (accent === "teal" ? C.teal : C.indigo) : "#E9EDF3";
+  const unit = field.kind === "skinfold" ? "mm" : "cm";
+  return (
+    <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderLeft: `3px solid ${barColor}`, borderRadius: 14, padding: "11px 13px", display: "flex", alignItems: "center", gap: 11, boxShadow: "0 1px 6px rgba(20,32,58,.03)" }}>
+      <span style={{ flex: "none", width: 26, height: 26, borderRadius: 8, background: soft, color: fg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, fontFamily: FONT_HEAD }}>{num}</span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 14.5, fontWeight: 700, letterSpacing: "-.01em" }}>{field.short}</span>
+          {field.optional && (
+            <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: ".05em", color: C.indigo, background: C.indigoSoft, padding: "2px 5px", borderRadius: 5 }}>EXP</span>
+          )}
+        </span>
+        <span style={{ display: "block", fontSize: 11.5, color: C.faint, marginTop: 1 }}>{field.region}</span>
+        {showDescription && <span style={{ display: "block", fontSize: 11.5, color: "#8A93A3", lineHeight: 1.45, marginTop: 4 }}>{field.description}</span>}
+      </span>
+      <span style={{ position: "relative", flex: "none" }}>
+        <input
+          id={`inp-${field.key}`}
+          className={accent === "teal" ? "sa-input sa-num" : "sa-input-indigo sa-num"}
+          type="number"
+          inputMode="decimal"
+          step="0.1"
+          placeholder="0,0"
+          value={value ?? ""}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={onKeyDown}
+          style={{ width: 92, textAlign: "right", border: "1.5px solid #E0E5EC", borderRadius: 11, padding: "11px 32px 11px 10px", fontSize: 16, fontWeight: 700, fontFamily: FONT_HEAD, color: C.ink, background: "#FBFCFD", outline: "none" }}
+        />
+        <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 700, color: "#AAB3C2", fontFamily: FONT_HEAD, pointerEvents: "none" }}>{unit}</span>
+      </span>
     </div>
   );
 }
