@@ -17,6 +17,7 @@ import {
   GraduationCap,
   Info,
   LogIn,
+  Monitor,
   Ruler,
   UserPlus,
 } from "lucide-react";
@@ -1232,7 +1233,7 @@ export default function Home() {
               <div style={{ fontSize: 11, letterSpacing: ".14em", textTransform: "uppercase", color: C.faint, fontWeight: 700, margin: "22px 4px 10px" }}>
                 Ferramentas externas
               </div>
-              <div style={{ display: "flex", gap: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12 }}>
                 <a href="https://ultrakcalc.github.io/UltraKcalc/index.html" target="_blank" rel="noopener noreferrer" className="sa-tap" style={toolCardStyle}>
                   <Calculator size={22} color={C.indigo} />
                   <span style={{ display: "block", fontSize: 14, fontWeight: 700, marginTop: 8 }}>
@@ -1246,6 +1247,13 @@ export default function Home() {
                     METCalc <ExternalLink size={12} style={{ display: "inline", verticalAlign: "middle", color: C.faint }} />
                   </span>
                   <span style={{ display: "block", fontSize: 12, color: C.faint }}>Gasto energético</span>
+                </a>
+                <a href="https://marcuscattem.github.io/GUST/" target="_blank" rel="noopener noreferrer" className="sa-tap" style={toolCardStyle}>
+                  <Monitor size={22} color={C.indigo} />
+                  <span style={{ display: "block", fontSize: 14, fontWeight: 700, marginTop: 8 }}>
+                    GUST <ExternalLink size={12} style={{ display: "inline", verticalAlign: "middle", color: C.faint }} />
+                  </span>
+                  <span style={{ display: "block", fontSize: 12, color: C.faint }}>Ultrassom</span>
                 </a>
               </div>
             </div>
