@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  Download,
   Dumbbell,
   ExternalLink,
   GraduationCap,
@@ -277,6 +278,142 @@ const isakTutorialPoints = [
   { name: "Cicatriz umbilical", description: "Referência central do abdome para a dobra abdominal e o perímetro de abdome." },
 ] as const;
 
+type Sex = "male" | "female";
+type CompositionEquationKey =
+  | "slaughter_1988"
+  | "jackson_pollock_1978_men"
+  | "jackson_pollock_ward_1980_women"
+  | "petroski_1995_men"
+  | "petroski_1995_women"
+  | "guedes_1991_men"
+  | "guedes_1991_women"
+  | "faulkner_yuhasz_1968"
+  | "durnin_womersley_1974";
+
+type CompositionInputs = {
+  sex: "" | Sex;
+  age: string;
+  mass: string;
+  stature: string;
+  equation: "" | CompositionEquationKey;
+};
+
+type CompositionEquation = {
+  key: CompositionEquationKey;
+  label: string;
+  sexes: Sex[];
+  ageRange: [number, number];
+  foldKeys: string[];
+  direct: boolean;
+};
+
+type CompositionMetric = {
+  label: string;
+  value: string;
+};
+
+type CompositionResult = {
+  participantId: string;
+  date: string;
+  sex: Sex;
+  age: number;
+  mass: number;
+  stature: number;
+  equationLabel: string;
+  equationMethod: string;
+  bodyFatPercent: number;
+  density: number;
+  foldSum: number;
+  imc: number;
+  imcClassification: string;
+  rcq: number;
+  rce: number;
+  cmb: number;
+  requiredFolds: CompositionMetric[];
+  allMeasurements: CompositionMetric[];
+  warnings: string[];
+};
+
+const sexLabels: Record<Sex, string> = {
+  male: "Masculino",
+  female: "Feminino",
+};
+
+const compositionEquations: CompositionEquation[] = [
+  {
+    key: "slaughter_1988",
+    label: "Slaughter et al. (1988)",
+    sexes: ["male", "female"],
+    ageRange: [8, 17],
+    foldKeys: ["triceps", "pant_dobra"],
+    direct: true,
+  },
+  {
+    key: "jackson_pollock_1978_men",
+    label: "Jackson & Pollock (1978) - homens",
+    sexes: ["male"],
+    ageRange: [18, 61],
+    foldKeys: ["toracica", "abdom", "coxa"],
+    direct: false,
+  },
+  {
+    key: "jackson_pollock_ward_1980_women",
+    label: "Jackson, Pollock & Ward (1980) - mulheres",
+    sexes: ["female"],
+    ageRange: [18, 55],
+    foldKeys: ["triceps", "iliaca", "coxa"],
+    direct: false,
+  },
+  {
+    key: "petroski_1995_men",
+    label: "Petroski (1995) - homens",
+    sexes: ["male"],
+    ageRange: [18, 66],
+    foldKeys: ["triceps", "subscap", "iliaca", "pant_dobra"],
+    direct: false,
+  },
+  {
+    key: "petroski_1995_women",
+    label: "Petroski (1995) - mulheres",
+    sexes: ["female"],
+    ageRange: [18, 51],
+    foldKeys: ["axilar_media", "iliaca", "coxa", "pant_dobra"],
+    direct: false,
+  },
+  {
+    key: "guedes_1991_men",
+    label: "Guedes (1991) - homens",
+    sexes: ["male"],
+    ageRange: [18, 30],
+    foldKeys: ["triceps", "iliaca", "abdom"],
+    direct: false,
+  },
+  {
+    key: "guedes_1991_women",
+    label: "Guedes (1991) - mulheres",
+    sexes: ["female"],
+    ageRange: [18, 30],
+    foldKeys: ["subscap", "iliaca", "coxa"],
+    direct: false,
+  },
+  {
+    key: "faulkner_yuhasz_1968",
+    label: "Faulkner-Yuhasz (1968)",
+    sexes: ["male", "female"],
+    ageRange: [18, 40],
+    foldKeys: ["subscap", "triceps", "iliaca", "abdom"],
+    direct: true,
+  },
+  {
+    key: "durnin_womersley_1974",
+    label: "Durnin & Womersley (1974)",
+    sexes: ["male", "female"],
+    ageRange: [16, 72],
+    foldKeys: ["subscap", "triceps", "biceps", "iliaca"],
+    direct: false,
+  },
+];
+
 /* ------------------------------------------------------------------ *
  *  Helpers (unchanged math/export logic)
  * ------------------------------------------------------------------ */
@@ -332,6 +469,92 @@ function calculateEtmPercent(values: number[]) {
 
 function formatNumber(value: number, fractionDigits = 2) {
   return Number.isFinite(value) ? value.toFixed(fractionDigits) : "Pend.";
+}
+
+function parseNumericInput(value: string) {
+  return Number(value.replace(",", "."));
+}
+
+function formatMaybeNumber(value: number, fractionDigits = 2, suffix = "") {
+  return Number.isFinite(value) ? `${value.toFixed(fractionDigits)}${suffix}` : "Não calculado";
+}
+
+function classifyImc(imc: number) {
+  if (!Number.isFinite(imc)) return "Não calculado";
+  if (imc < 18.5) return "Baixo peso";
+  if (imc < 25) return "Eutrofia";
+  if (imc < 30) return "Sobrepeso";
+  if (imc < 35) return "Obesidade grau I";
+  if (imc < 40) return "Obesidade grau II";
+  return "Obesidade grau III";
+}
+
+function siriFromDensity(density: number) {
+  return (4.95 / density - 4.5) * 100;
+}
+
+function durninWomersleyDensity(sex: Sex, age: number, foldSum: number) {
+  const logSum = Math.log10(foldSum);
+  if (sex === "male") {
+    if (age < 20) return 1.1620 - 0.0630 * logSum;
+    if (age < 30) return 1.1631 - 0.0632 * logSum;
+    if (age < 40) return 1.1422 - 0.0544 * logSum;
+    if (age < 50) return 1.1620 - 0.0700 * logSum;
+    return 1.1715 - 0.0779 * logSum;
+  }
+  if (age < 20) return 1.1549 - 0.0678 * logSum;
+  if (age < 30) return 1.1599 - 0.0717 * logSum;
+  if (age < 40) return 1.1423 - 0.0632 * logSum;
+  if (age < 50) return 1.1333 - 0.0612 * logSum;
+  return 1.1339 - 0.0645 * logSum;
+}
+
+function calculateBodyFatPercent(equationKey: CompositionEquationKey, sex: Sex, age: number, foldSum: number) {
+  const logSum = Math.log10(foldSum);
+  let density = Number.NaN;
+  let bodyFatPercent = Number.NaN;
+  let method = "Conversão por Siri";
+
+  switch (equationKey) {
+    case "slaughter_1988":
+      method = "Equação direta";
+      bodyFatPercent = sex === "male" ? 0.735 * foldSum + 1 : 0.61 * foldSum + 5.1;
+      break;
+    case "jackson_pollock_1978_men":
+      density = 1.10938 - 0.0008267 * foldSum + 0.0000016 * foldSum ** 2 - 0.0002574 * age;
+      bodyFatPercent = siriFromDensity(density);
+      break;
+    case "jackson_pollock_ward_1980_women":
+      density = 1.0994921 - 0.0009929 * foldSum + 0.0000023 * foldSum ** 2 - 0.0001392 * age;
+      bodyFatPercent = siriFromDensity(density);
+      break;
+    case "petroski_1995_men":
+      density = 1.10726863 - 0.00081201 * foldSum + 0.00000212 * foldSum ** 2 - 0.00041761 * age;
+      bodyFatPercent = siriFromDensity(density);
+      break;
+    case "petroski_1995_women":
+      density = 1.1954713 - 0.07513507 * logSum - 0.00041072 * age;
+      bodyFatPercent = siriFromDensity(density);
+      break;
+    case "guedes_1991_men":
+      density = 1.1736 - 0.06706 * logSum;
+      bodyFatPercent = siriFromDensity(density);
+      break;
+    case "guedes_1991_women":
+      density = 1.1665 - 0.07063 * logSum;
+      bodyFatPercent = siriFromDensity(density);
+      break;
+    case "faulkner_yuhasz_1968":
+      method = "Equação direta";
+      bodyFatPercent = 0.153 * foldSum + 5.783;
+      break;
+    case "durnin_womersley_1974":
+      density = durninWomersleyDensity(sex, age, foldSum);
+      bodyFatPercent = siriFromDensity(density);
+      break;
+  }
+
+  return { bodyFatPercent, density, method };
 }
 
 function getFpmStats(rightMeasurements: number[], leftMeasurements: number[]) {
@@ -412,6 +635,15 @@ export default function Home() {
   const [isakExpandedSkinfolds, setIsakExpandedSkinfolds] = useState(false);
   const [isakTutorialStep, setIsakTutorialStep] = useState<"points" | "measurements">("measurements");
   const [isakTutorialCheckedPoints, setIsakTutorialCheckedPoints] = useState<Record<string, boolean>>({});
+  const [isakCompositionStep, setIsakCompositionStep] = useState<"none" | "prompt" | "form" | "result">("none");
+  const [compositionInputs, setCompositionInputs] = useState<CompositionInputs>({
+    sex: "",
+    age: "",
+    mass: "",
+    stature: "",
+    equation: "",
+  });
+  const [compositionResult, setCompositionResult] = useState<CompositionResult | null>(null);
 
   // Mutations
   const saveAntropoMutation = trpc.evaluations.saveAntropometria.useMutation();
@@ -633,6 +865,7 @@ export default function Home() {
     fpmBestLeg,
     isakInputs,
     isakExpandedSkinfolds,
+    compositionInputs,
   ]);
 
   const antropoEtmRows = antropoFields.map((field) => {
@@ -700,6 +933,9 @@ export default function Home() {
     setIsakExpandedSkinfolds(false);
     setIsakTutorialStep("measurements");
     setIsakTutorialCheckedPoints({});
+    setIsakCompositionStep("none");
+    setCompositionInputs({ sex: "", age: "", mass: "", stature: "", equation: "" });
+    setCompositionResult(null);
   };
 
   const startIsakTutorial = () => {
@@ -740,6 +976,196 @@ export default function Home() {
         measurementIndex === index ? nextValue : measurement,
       ),
     }));
+  };
+
+  const buildCompositionResult = (): { result?: CompositionResult; error?: string } => {
+    const sex = compositionInputs.sex;
+    const age = parseNumericInput(compositionInputs.age);
+    const mass = parseNumericInput(compositionInputs.mass);
+    const stature = parseNumericInput(compositionInputs.stature);
+    const equation = compositionEquations.find((item) => item.key === compositionInputs.equation);
+
+    if (!sex) return { error: "Selecione o sexo para escolher uma equação compatível." };
+    if (!Number.isFinite(age) || age <= 0) return { error: "Informe uma idade válida." };
+    if (!Number.isFinite(mass) || mass <= 0) return { error: "Informe a massa corporal em kg." };
+    if (!Number.isFinite(stature) || stature <= 0) return { error: "Informe a estatura em cm." };
+    if (!equation) return { error: "Selecione uma equação de composição corporal." };
+    if (!equation.sexes.includes(sex)) return { error: "A equação selecionada não é compatível com o sexo informado." };
+
+    const fullFieldList = buildIsakFields(true);
+    const fullFieldByKey = new Map(fullFieldList.map((field) => [field.key, field]));
+    const meanByKey = new Map(activeIsakFields.map((field) => [field.key, calculateMean(isakData[field.key] ?? [])]));
+    const missingFoldLabels = equation.foldKeys
+      .filter((key) => !Number.isFinite(meanByKey.get(key)))
+      .map((key) => fullFieldByKey.get(key)?.short ?? key);
+
+    if (missingFoldLabels.length > 0) {
+      return { error: `Essa equação exige: ${missingFoldLabels.join(", ")}.` };
+    }
+
+    const foldSum = equation.foldKeys.reduce((sum, key) => sum + (meanByKey.get(key) ?? 0), 0);
+    if (!Number.isFinite(foldSum) || foldSum <= 0) return { error: "A soma das dobras obrigatórias precisa ser maior que zero." };
+
+    const { bodyFatPercent, density, method } = calculateBodyFatPercent(equation.key, sex, age, foldSum);
+    if (!Number.isFinite(bodyFatPercent)) return { error: "Não foi possível calcular o percentual de gordura com esses dados." };
+
+    const cintura = meanByKey.get("cintura") ?? Number.NaN;
+    const quadril = meanByKey.get("gluteo") ?? Number.NaN;
+    const bracoRelaxado = meanByKey.get("braco_rel") ?? Number.NaN;
+    const triceps = meanByKey.get("triceps") ?? Number.NaN;
+    const imc = mass / (stature / 100) ** 2;
+    const rcq = Number.isFinite(cintura) && Number.isFinite(quadril) && quadril > 0 ? cintura / quadril : Number.NaN;
+    const rce = Number.isFinite(cintura) && stature > 0 ? cintura / stature : Number.NaN;
+    const cmb =
+      Number.isFinite(bracoRelaxado) && Number.isFinite(triceps)
+        ? bracoRelaxado - (Math.PI * triceps) / 10 - (sex === "male" ? 10 : 6.5)
+        : Number.NaN;
+    const warnings: string[] = [];
+
+    if (age < equation.ageRange[0] || age > equation.ageRange[1]) {
+      warnings.push(`Idade fora da faixa original da equação (${equation.ageRange[0]}-${equation.ageRange[1]} anos).`);
+    }
+    if (age > 100) warnings.push("Idade acima de 100 anos: conferir cadastro.");
+    if (mass < 25 || mass > 250) warnings.push("Massa corporal fora da faixa usual: conferir valor.");
+    if (stature < 100 || stature > 230) warnings.push("Estatura fora da faixa usual: conferir valor.");
+    activeIsakFields.forEach((field) => {
+      const value = meanByKey.get(field.key) ?? Number.NaN;
+      if (field.kind === "skinfold" && value > 60) warnings.push(`${field.short}: dobra acima de 60 mm.`);
+      if (field.kind === "perimeter" && value > 250) warnings.push(`${field.short}: perímetro acima de 250 cm.`);
+    });
+
+    return {
+      result: {
+        participantId: participantId.trim(),
+        date,
+        sex,
+        age,
+        mass,
+        stature,
+        equationLabel: equation.label,
+        equationMethod: method,
+        bodyFatPercent,
+        density,
+        foldSum,
+        imc,
+        imcClassification: classifyImc(imc),
+        rcq,
+        rce,
+        cmb,
+        requiredFolds: equation.foldKeys.map((key) => ({
+          label: fullFieldByKey.get(key)?.short ?? key,
+          value: formatMaybeNumber(meanByKey.get(key) ?? Number.NaN, 1, " mm"),
+        })),
+        allMeasurements: activeIsakFields.map((field) => ({
+          label: field.short,
+          value: formatMaybeNumber(meanByKey.get(field.key) ?? Number.NaN, 1, field.kind === "skinfold" ? " mm" : " cm"),
+        })),
+        warnings,
+      },
+    };
+  };
+
+  const handleCalculateComposition = () => {
+    const calculation = buildCompositionResult();
+    if (calculation.error || !calculation.result) {
+      toast.error(calculation.error ?? "Não foi possível calcular a composição corporal");
+      return;
+    }
+    setCompositionResult(calculation.result);
+    setIsakCompositionStep("result");
+  };
+
+  const downloadBlobFile = (filename: string, blob: Blob) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const exportCompositionCsv = () => {
+    if (!compositionResult) return;
+    const csvRows: Array<[string, string]> = [
+      ["ID participante", compositionResult.participantId],
+      ["Data", new Date(compositionResult.date).toLocaleDateString("pt-BR")],
+      ["Sexo", sexLabels[compositionResult.sex]],
+      ["Idade", `${compositionResult.age}`],
+      ["Equação", compositionResult.equationLabel],
+      ["Método", compositionResult.equationMethod],
+      ["Percentual de gordura", formatMaybeNumber(compositionResult.bodyFatPercent, 2, "%")],
+      ["Densidade corporal", formatMaybeNumber(compositionResult.density, 4)],
+      ["Soma das dobras", formatMaybeNumber(compositionResult.foldSum, 1, " mm")],
+      ["IMC", formatMaybeNumber(compositionResult.imc, 2)],
+      ["Classificação IMC", compositionResult.imcClassification],
+      ["RCQ", formatMaybeNumber(compositionResult.rcq, 3)],
+      ["RCE", formatMaybeNumber(compositionResult.rce, 3)],
+      ["CMB corrigida", formatMaybeNumber(compositionResult.cmb, 1, " cm")],
+      ["Massa corporal", formatMaybeNumber(compositionResult.mass, 1, " kg")],
+      ["Estatura", formatMaybeNumber(compositionResult.stature, 1, " cm")],
+      ["Avisos", compositionResult.warnings.join(" | ") || "Sem avisos"],
+      ["", ""],
+      ["Medidas usadas", ""],
+      ...compositionResult.allMeasurements.map((metric) => [metric.label, metric.value] as [string, string]),
+    ];
+    const csv = csvRows
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    downloadBlobFile(
+      `composicao_isak_${safeFilenamePart(compositionResult.participantId)}_${dateStamp(new Date(compositionResult.date))}.csv`,
+      new Blob([csv], { type: "text/csv;charset=utf-8" }),
+    );
+  };
+
+  const exportCompositionJpeg = async () => {
+    if (!compositionResult) return;
+    const card = document.getElementById("isak-composition-card");
+    if (!card) return;
+    const width = Math.ceil(card.scrollWidth);
+    const height = Math.ceil(card.scrollHeight);
+    const clone = card.cloneNode(true) as HTMLElement;
+    clone.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
+    clone.style.width = `${width}px`;
+    clone.style.boxSizing = "border-box";
+    const serializedCard = new XMLSerializer().serializeToString(clone);
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+        <foreignObject width="100%" height="100%">${serializedCard}</foreignObject>
+      </svg>
+    `;
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = width * 2;
+      canvas.height = height * 2;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        toast.error("Não foi possível gerar o JPEG");
+        return;
+      }
+      context.fillStyle = "#FFFFFF";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.scale(2, 2);
+      context.drawImage(image, 0, 0);
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            toast.error("Não foi possível gerar o JPEG");
+            return;
+          }
+          downloadBlobFile(
+            `composicao_isak_${safeFilenamePart(compositionResult.participantId)}_${dateStamp(new Date(compositionResult.date))}.jpeg`,
+            blob,
+          );
+        },
+        "image/jpeg",
+        0.95,
+      );
+    };
+    image.onerror = () => toast.error("Não foi possível gerar o JPEG");
+    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   };
 
   const saveAntropoEvaluation = async (data = antropoData) => {
@@ -807,6 +1233,10 @@ export default function Home() {
   const handleSaveIsakReview = async () => {
     if (isakHasInvalidEtm && !isakEtmOverrideConfirmed) {
       toast.error("Marque a confirmação para salvar com ETM fora do alvo");
+      return;
+    }
+    if (activeApp === "isakTutorial" && isakCompositionStep === "none") {
+      setIsakCompositionStep("prompt");
       return;
     }
     await saveIsakEvaluation();
@@ -1059,8 +1489,9 @@ export default function Home() {
   const isIsak = activeApp === "isak" || activeApp === "isakTutorial";
   const isTutorial = activeApp === "isakTutorial";
   const tutorialPointsStep = isTutorial && isakTutorialStep === "points";
+  const isakCompositionActive = isTutorial && isakCompositionStep !== "none";
   const isakCollect = (activeApp === "isak" || (isTutorial && isakTutorialStep === "measurements")) && !isakReview;
-  const reviewScreen = (activeApp === "antropo" && antropoReview) || (isIsak && isakReview);
+  const reviewScreen = ((activeApp === "antropo" && antropoReview) || (isIsak && isakReview)) && !isakCompositionActive;
   const antropoCollect = activeApp === "antropo" && !antropoReview;
 
   const headerInfo: Record<string, { kicker: string; title: string }> = {
@@ -1568,6 +1999,262 @@ export default function Home() {
               )}
             </div>
           )}
+
+          {/* ===== ISAK tutorial composition estimate ===== */}
+          {isakCompositionActive && (
+            <div style={{ padding: "16px 18px 130px" }}>
+              {isakCompositionStep === "prompt" && (
+                <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: 18, boxShadow: "0 2px 10px rgba(20,32,58,.04)" }}>
+                  <div style={{ width: 44, height: 44, borderRadius: 14, background: C.indigoSoft, color: C.indigo, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
+                    <Activity size={23} />
+                  </div>
+                  <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: "-.01em" }}>Estimar composição corporal?</div>
+                  <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.55, marginTop: 6 }}>
+                    A avaliação ISAK foi concluída. Você pode usar as médias das 3 rodadas para estimar percentual de gordura, IMC, RCQ, RCE e CMB corrigida.
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
+                    <button
+                      type="button"
+                      onClick={() => setIsakCompositionStep("form")}
+                      className="sa-tap"
+                      style={{ border: "none", background: C.indigo, color: "#fff", borderRadius: 14, padding: 14, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+                    >
+                      Sim, estimar composição <ArrowRight size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => saveIsakEvaluation()}
+                      disabled={saveIsakMutation.isPending}
+                      className="sa-tap"
+                      style={secondaryWideBtnStyle}
+                    >
+                      Não, salvar avaliação
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {isakCompositionStep === "form" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div style={{ margin: "6px 2px 2px" }}>
+                    <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: "-.01em" }}>Dados para estimativa</div>
+                    <div style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>
+                      As fórmulas usam sexo, idade, massa corporal, estatura e dobras específicas da equação escolhida.
+                    </div>
+                  </div>
+                  <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, display: "grid", gap: 10 }}>
+                    <label>
+                      <span style={fieldLabelStyle}>Sexo</span>
+                      <select
+                        value={compositionInputs.sex}
+                        onChange={(event) => setCompositionInputs((current) => ({ ...current, sex: event.target.value as "" | Sex }))}
+                        className="sa-input"
+                        style={inputStyle}
+                      >
+                        <option value="">Selecione</option>
+                        <option value="male">Masculino</option>
+                        <option value="female">Feminino</option>
+                      </select>
+                    </label>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <label>
+                        <span style={fieldLabelStyle}>Idade</span>
+                        <input
+                          className="sa-input"
+                          inputMode="decimal"
+                          value={compositionInputs.age}
+                          onChange={(event) => setCompositionInputs((current) => ({ ...current, age: event.target.value }))}
+                          placeholder="anos"
+                          style={inputStyle}
+                        />
+                      </label>
+                      <label>
+                        <span style={fieldLabelStyle}>Massa</span>
+                        <input
+                          className="sa-input"
+                          inputMode="decimal"
+                          value={compositionInputs.mass}
+                          onChange={(event) => setCompositionInputs((current) => ({ ...current, mass: event.target.value }))}
+                          placeholder="kg"
+                          style={inputStyle}
+                        />
+                      </label>
+                    </div>
+                    <label>
+                      <span style={fieldLabelStyle}>Estatura</span>
+                      <input
+                        className="sa-input"
+                        inputMode="decimal"
+                        value={compositionInputs.stature}
+                        onChange={(event) => setCompositionInputs((current) => ({ ...current, stature: event.target.value }))}
+                        placeholder="cm"
+                        style={inputStyle}
+                      />
+                    </label>
+                    <label>
+                      <span style={fieldLabelStyle}>Equação</span>
+                      <select
+                        value={compositionInputs.equation}
+                        onChange={(event) =>
+                          setCompositionInputs((current) => ({
+                            ...current,
+                            equation: event.target.value as "" | CompositionEquationKey,
+                          }))
+                        }
+                        className="sa-input"
+                        style={inputStyle}
+                      >
+                        <option value="">Selecione</option>
+                        {compositionEquations.map((equation) => (
+                          <option key={equation.key} value={equation.key}>
+                            {equation.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div style={{ background: C.indigoSoft, border: "1px solid #DCE0F6", borderRadius: 14, padding: "12px 14px", display: "flex", gap: 10 }}>
+                    <Info size={18} color={C.indigo} style={{ flex: "none", marginTop: 1 }} />
+                    <span style={{ fontSize: 12.5, color: "#3B4663", lineHeight: 1.5 }}>
+                      Jackson & Pollock homens e Petroski mulheres exigem as dobras torácica ou axilar média. Para essas equações, marque a avaliação expandida no início do ISAK Tutorial.
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button type="button" onClick={() => setIsakCompositionStep("prompt")} className="sa-tap" style={secondaryBtnStyle}>
+                      Voltar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCalculateComposition}
+                      className="sa-tap"
+                      style={{ flex: 1, border: "none", background: C.indigo, color: "#fff", borderRadius: 14, padding: 14, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+                    >
+                      Calcular <ArrowRight size={18} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {isakCompositionStep === "result" && compositionResult && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div
+                    id="isak-composition-card"
+                    style={{
+                      background: "#fff",
+                      border: `1px solid ${C.border}`,
+                      borderRadius: 18,
+                      padding: 18,
+                      boxShadow: "0 8px 24px rgba(20,32,58,.08)",
+                      color: C.ink,
+                      fontFamily: FONT_BODY,
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+                      <div>
+                        <div style={{ fontSize: 11, letterSpacing: ".14em", textTransform: "uppercase", color: C.indigo, fontWeight: 800, fontFamily: FONT_HEAD }}>
+                          Resumo ISAK Tutorial
+                        </div>
+                        <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.02em", marginTop: 3 }}>
+                          {compositionResult.participantId || "Participante"}
+                        </div>
+                        <div style={{ fontSize: 12.5, color: C.muted, marginTop: 2 }}>
+                          {new Date(compositionResult.date).toLocaleDateString("pt-BR")} · {sexLabels[compositionResult.sex]} · {compositionResult.age} anos
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right", fontSize: 11, color: C.faint, fontWeight: 700 }}>
+                        {compositionResult.equationLabel}
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 18, background: C.navy, color: "#fff", borderRadius: 16, padding: "17px 16px" }}>
+                      <div style={{ fontSize: 12, color: "#AFC0DC", fontWeight: 700 }}>Percentual de gordura estimado</div>
+                      <div style={{ fontSize: 42, lineHeight: 1, fontWeight: 800, fontFamily: FONT_HEAD, marginTop: 5 }}>
+                        {formatMaybeNumber(compositionResult.bodyFatPercent, 1, "%")}
+                      </div>
+                      <div style={{ fontSize: 12, color: "#7FE3D6", fontWeight: 700, marginTop: 8 }}>
+                        {compositionResult.equationMethod}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginTop: 12 }}>
+                      {[
+                        ["IMC", `${formatMaybeNumber(compositionResult.imc, 1)} · ${compositionResult.imcClassification}`],
+                        ["Densidade", formatMaybeNumber(compositionResult.density, 4)],
+                        ["Soma das dobras", formatMaybeNumber(compositionResult.foldSum, 1, " mm")],
+                        ["RCQ", formatMaybeNumber(compositionResult.rcq, 3)],
+                        ["RCE", formatMaybeNumber(compositionResult.rce, 3)],
+                        ["CMB corrigida", formatMaybeNumber(compositionResult.cmb, 1, " cm")],
+                        ["Massa", formatMaybeNumber(compositionResult.mass, 1, " kg")],
+                        ["Estatura", formatMaybeNumber(compositionResult.stature, 1, " cm")],
+                      ].map(([label, value]) => (
+                        <div key={label} style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 10, background: "#FBFCFD" }}>
+                          <div style={{ fontSize: 10, color: C.faint, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase" }}>{label}</div>
+                          <div style={{ fontSize: 13, color: C.ink, fontWeight: 800, marginTop: 3 }}>{value}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ marginTop: 14 }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: C.indigo, marginBottom: 7 }}>Dobras usadas na equação</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+                        {compositionResult.requiredFolds.map((metric) => (
+                          <span key={metric.label} style={{ background: C.indigoSoft, color: C.indigoDark, borderRadius: 9, padding: "6px 8px", fontSize: 11.5, fontWeight: 800 }}>
+                            {metric.label}: {metric.value}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 14 }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: C.tealDark, marginBottom: 7 }}>Medidas ISAK (médias)</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6 }}>
+                        {compositionResult.allMeasurements.map((metric) => (
+                          <div key={metric.label} style={{ display: "flex", justifyContent: "space-between", gap: 8, borderBottom: "1px solid #EEF1F5", paddingBottom: 4, fontSize: 11.5 }}>
+                            <span style={{ color: C.muted, fontWeight: 700 }}>{metric.label}</span>
+                            <span style={{ color: C.ink, fontWeight: 800 }}>{metric.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {compositionResult.warnings.length > 0 && (
+                      <div style={{ marginTop: 14, background: "#FEF6E7", border: "1px solid #F4D58A", borderRadius: 12, padding: 10 }}>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: "#8A6A1F", marginBottom: 4 }}>Avisos de cautela</div>
+                        {compositionResult.warnings.map((warning) => (
+                          <div key={warning} style={{ fontSize: 11.5, color: "#8A6A1F", lineHeight: 1.45 }}>
+                            {warning}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <button type="button" onClick={exportCompositionJpeg} className="sa-tap" style={secondaryWideBtnStyle}>
+                      <Download size={16} /> JPEG
+                    </button>
+                    <button type="button" onClick={exportCompositionCsv} className="sa-tap" style={secondaryWideBtnStyle}>
+                      <Download size={16} /> CSV
+                    </button>
+                  </div>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button type="button" onClick={() => setIsakCompositionStep("form")} className="sa-tap" style={secondaryBtnStyle}>
+                      Editar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => saveIsakEvaluation()}
+                      disabled={saveIsakMutation.isPending}
+                      className="sa-tap"
+                      style={{ flex: 1, border: "none", background: C.teal, color: "#fff", borderRadius: 14, padding: 14, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+                    >
+                      Salvar e finalizar <ArrowRight size={18} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ---------- sticky action bar ---------- */}
@@ -1753,6 +2440,21 @@ const secondaryBtnStyle: React.CSSProperties = {
   fontWeight: 700,
   padding: "14px 20px",
   borderRadius: 14,
+};
+
+const secondaryWideBtnStyle: React.CSSProperties = {
+  cursor: "pointer",
+  border: "1.5px solid #DCE1E9",
+  background: "#fff",
+  color: "#3B4663",
+  fontSize: 14,
+  fontWeight: 800,
+  padding: 14,
+  borderRadius: 14,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 8,
 };
 
 function MenuCard({
