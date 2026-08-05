@@ -312,6 +312,19 @@ type CompositionMetric = {
   value: string;
 };
 
+type CompositionEquationComparison = {
+  key: CompositionEquationKey;
+  label: string;
+  isSelected: boolean;
+  isPertinent: boolean;
+  bodyFatPercent: number;
+  density: number;
+  foldSum: number;
+  method: string;
+  requiredFolds: CompositionMetric[];
+  warnings: string[];
+};
+
 type CompositionResult = {
   participantId: string;
   date: string;
@@ -319,6 +332,7 @@ type CompositionResult = {
   age: number;
   mass: number;
   stature: number;
+  selectedEquationKey: CompositionEquationKey;
   equationLabel: string;
   equationMethod: string;
   bodyFatPercent: number;
@@ -331,6 +345,7 @@ type CompositionResult = {
   cmb: number;
   requiredFolds: CompositionMetric[];
   allMeasurements: CompositionMetric[];
+  comparisons: CompositionEquationComparison[];
   warnings: string[];
 };
 
@@ -555,6 +570,17 @@ function calculateBodyFatPercent(equationKey: CompositionEquationKey, sex: Sex, 
   }
 
   return { bodyFatPercent, density, method };
+}
+
+function getEquationApplicabilityWarnings(equation: CompositionEquation, sex: Sex, age: number) {
+  const warnings: string[] = [];
+  if (!equation.sexes.includes(sex)) {
+    warnings.push(`Equação originalmente indicada para: ${equation.sexes.map((item) => sexLabels[item]).join(" ou ")}.`);
+  }
+  if (age < equation.ageRange[0] || age > equation.ageRange[1]) {
+    warnings.push(`Idade fora da faixa original da equação (${equation.ageRange[0]}-${equation.ageRange[1]} anos).`);
+  }
+  return warnings;
 }
 
 function getFpmStats(rightMeasurements: number[], leftMeasurements: number[]) {
@@ -808,16 +834,18 @@ export default function Home() {
     await downloadWorkbook(workbook, collectionFilename(data.date, data.participantId));
   };
 
-  const generateLocalIsakExcel = async (data: {
-    participantId: string;
-    date: string;
-    measurements: Record<string, number[]>;
-    expandedSkinfolds: boolean;
-  }) => {
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet("ISAK");
+  function addIsakMeasurementSheetsToWorkbook(
+    workbook: ExcelJS.Workbook,
+    data: {
+      participantId: string;
+      date: string;
+      measurements: Record<string, number[]>;
+      expandedSkinfolds: boolean;
+    },
+  ) {
     const fields = buildIsakFields(data.expandedSkinfolds);
-    worksheet.columns = [
+    const roundsWorksheet = workbook.addWorksheet("Rodadas ISAK");
+    roundsWorksheet.columns = [
       { header: "ID Participante", key: "participantId", width: 15 },
       { header: "Data", key: "date", width: 15 },
       { header: "Rodada", key: "round", width: 10 },
@@ -833,10 +861,118 @@ export default function Home() {
       fields.forEach((field) => {
         row[field.key] = data.measurements[field.key]?.[round];
       });
-      worksheet.addRow(row);
+      roundsWorksheet.addRow(row);
     }
-    styleHeader(worksheet, "FFC00000");
-    await downloadWorkbook(workbook, `isak_${safeFilenamePart(data.participantId)}_${dateStamp()}.xlsx`);
+    styleHeader(roundsWorksheet, "FFC00000");
+
+    const summaryWorksheet = workbook.addWorksheet("Medias e ETM");
+    summaryWorksheet.columns = [
+      { header: "ID Participante", key: "participantId", width: 15 },
+      { header: "Data", key: "date", width: 15 },
+      { header: "Medida", key: "measure", width: 28 },
+      { header: "Tipo", key: "kind", width: 14 },
+      { header: "Rodada 1", key: "round1", width: 12 },
+      { header: "Rodada 2", key: "round2", width: 12 },
+      { header: "Rodada 3", key: "round3", width: 12 },
+      { header: "Média", key: "mean", width: 12 },
+      { header: "ETM (%)", key: "etm", width: 12 },
+      { header: "Alvo ETM (%)", key: "limit", width: 14 },
+      { header: "Status", key: "status", width: 18 },
+    ];
+    fields.forEach((field) => {
+      const values = data.measurements[field.key] ?? [];
+      const etmPercent = calculateEtmPercent(values);
+      const limit = getEtmLimit(field.kind);
+      summaryWorksheet.addRow({
+        participantId: data.participantId,
+        date: new Date(data.date).toLocaleDateString("pt-BR"),
+        measure: field.label,
+        kind: field.kind === "skinfold" ? "Dobra cutânea" : "Perímetro",
+        round1: values[0],
+        round2: values[1],
+        round3: values[2],
+        mean: calculateMean(values),
+        etm: Number.isFinite(etmPercent) ? etmPercent : undefined,
+        limit,
+        status: Number.isFinite(etmPercent) && etmPercent < limit ? "Dentro do alvo" : "Fora do alvo",
+      });
+    });
+    styleHeader(summaryWorksheet, "FF0E9C8E");
+  }
+
+  function addCompositionSheetsToWorkbook(workbook: ExcelJS.Workbook, result: CompositionResult) {
+    const compositionWorksheet = workbook.addWorksheet("Composicao");
+    compositionWorksheet.columns = [
+      { header: "Campo", key: "field", width: 30 },
+      { header: "Valor", key: "value", width: 45 },
+    ];
+    [
+      ["ID participante", result.participantId],
+      ["Data", new Date(result.date).toLocaleDateString("pt-BR")],
+      ["Sexo", sexLabels[result.sex]],
+      ["Idade", result.age],
+      ["Massa corporal (kg)", result.mass],
+      ["Estatura (cm)", result.stature],
+      ["Equação em destaque", result.equationLabel],
+      ["Pertinência da equação em destaque", result.comparisons.find((comparison) => comparison.isSelected)?.isPertinent ? "Pertinente" : "Não pertinente"],
+      ["Método", result.equationMethod],
+      ["Percentual de gordura (%)", result.bodyFatPercent],
+      ["Densidade corporal", result.density],
+      ["Soma das dobras (mm)", result.foldSum],
+      ["IMC", result.imc],
+      ["Classificação IMC", result.imcClassification],
+      ["RCQ", result.rcq],
+      ["RCE", result.rce],
+      ["CMB corrigida (cm)", result.cmb],
+      ["Dobras usadas", result.requiredFolds.map((metric) => `${metric.label}: ${metric.value}`).join(" | ")],
+      ["Avisos", result.warnings.join(" | ") || "Sem avisos"],
+    ].forEach(([field, value]) => compositionWorksheet.addRow({ field, value }));
+    styleHeader(compositionWorksheet, "FF5B6CD6");
+
+    const equationsWorksheet = workbook.addWorksheet("Equacoes");
+    equationsWorksheet.columns = [
+      { header: "Equação", key: "equation", width: 38 },
+      { header: "Destaque", key: "selected", width: 12 },
+      { header: "Pertinente", key: "pertinent", width: 14 },
+      { header: "Percentual de gordura (%)", key: "bodyFatPercent", width: 24 },
+      { header: "Densidade", key: "density", width: 14 },
+      { header: "Soma das dobras (mm)", key: "foldSum", width: 22 },
+      { header: "Método", key: "method", width: 18 },
+      { header: "Dobras usadas", key: "requiredFolds", width: 60 },
+      { header: "Avisos", key: "warnings", width: 70 },
+    ];
+    result.comparisons.forEach((comparison) => {
+      equationsWorksheet.addRow({
+        equation: comparison.label,
+        selected: comparison.isSelected ? "Sim" : "Não",
+        pertinent: comparison.isPertinent ? "Sim" : "Não",
+        bodyFatPercent: Number.isFinite(comparison.bodyFatPercent) ? comparison.bodyFatPercent : undefined,
+        density: Number.isFinite(comparison.density) ? comparison.density : undefined,
+        foldSum: Number.isFinite(comparison.foldSum) ? comparison.foldSum : undefined,
+        method: comparison.method,
+        requiredFolds: comparison.requiredFolds.map((metric) => `${metric.label}: ${metric.value}`).join(" | "),
+        warnings: comparison.warnings.join(" | ") || "Sem avisos",
+      });
+    });
+    styleHeader(equationsWorksheet, "FF14203A");
+  }
+
+  const generateLocalIsakExcel = async (data: {
+    participantId: string;
+    date: string;
+    measurements: Record<string, number[]>;
+    expandedSkinfolds: boolean;
+    compositionResult?: CompositionResult | null;
+  }) => {
+    const workbook = new ExcelJS.Workbook();
+    addIsakMeasurementSheetsToWorkbook(workbook, data);
+    if (data.compositionResult) addCompositionSheetsToWorkbook(workbook, data.compositionResult);
+    await downloadWorkbook(
+      workbook,
+      data.compositionResult
+        ? `isak_completo_${safeFilenamePart(data.participantId)}_${dateStamp(new Date(data.date))}.xlsx`
+        : `isak_${safeFilenamePart(data.participantId)}_${dateStamp()}.xlsx`,
+    );
   };
 
   // Proteção contra atualização de página sem salvar
@@ -985,29 +1121,15 @@ export default function Home() {
     const stature = parseNumericInput(compositionInputs.stature);
     const equation = compositionEquations.find((item) => item.key === compositionInputs.equation);
 
-    if (!sex) return { error: "Selecione o sexo para escolher uma equação compatível." };
+    if (!sex) return { error: "Selecione o sexo para avaliar a pertinência das equações." };
     if (!Number.isFinite(age) || age <= 0) return { error: "Informe uma idade válida." };
     if (!Number.isFinite(mass) || mass <= 0) return { error: "Informe a massa corporal em kg." };
     if (!Number.isFinite(stature) || stature <= 0) return { error: "Informe a estatura em cm." };
     if (!equation) return { error: "Selecione uma equação de composição corporal." };
-    if (!equation.sexes.includes(sex)) return { error: "A equação selecionada não é compatível com o sexo informado." };
 
     const fullFieldList = buildIsakFields(true);
     const fullFieldByKey = new Map(fullFieldList.map((field) => [field.key, field]));
     const meanByKey = new Map(activeIsakFields.map((field) => [field.key, calculateMean(isakData[field.key] ?? [])]));
-    const missingFoldLabels = equation.foldKeys
-      .filter((key) => !Number.isFinite(meanByKey.get(key)))
-      .map((key) => fullFieldByKey.get(key)?.short ?? key);
-
-    if (missingFoldLabels.length > 0) {
-      return { error: `Essa equação exige: ${missingFoldLabels.join(", ")}.` };
-    }
-
-    const foldSum = equation.foldKeys.reduce((sum, key) => sum + (meanByKey.get(key) ?? 0), 0);
-    if (!Number.isFinite(foldSum) || foldSum <= 0) return { error: "A soma das dobras obrigatórias precisa ser maior que zero." };
-
-    const { bodyFatPercent, density, method } = calculateBodyFatPercent(equation.key, sex, age, foldSum);
-    if (!Number.isFinite(bodyFatPercent)) return { error: "Não foi possível calcular o percentual de gordura com esses dados." };
 
     const cintura = meanByKey.get("cintura") ?? Number.NaN;
     const quadril = meanByKey.get("gluteo") ?? Number.NaN;
@@ -1020,11 +1142,53 @@ export default function Home() {
       Number.isFinite(bracoRelaxado) && Number.isFinite(triceps)
         ? bracoRelaxado - (Math.PI * triceps) / 10 - (sex === "male" ? 10 : 6.5)
         : Number.NaN;
+
+    const comparisons = compositionEquations.map((item) => {
+      const missingFoldLabels = item.foldKeys
+        .filter((key) => !Number.isFinite(meanByKey.get(key)))
+        .map((key) => fullFieldByKey.get(key)?.short ?? key);
+      const applicabilityWarnings = getEquationApplicabilityWarnings(item, sex, age);
+      let foldSum = Number.NaN;
+      let bodyFatPercent = Number.NaN;
+      let density = Number.NaN;
+      let method = item.direct ? "Equação direta" : "Conversão por Siri";
+      const warnings = [...applicabilityWarnings];
+
+      if (missingFoldLabels.length > 0) {
+        warnings.push(`Dobras ausentes: ${missingFoldLabels.join(", ")}.`);
+      } else {
+        foldSum = item.foldKeys.reduce((sum, key) => sum + (meanByKey.get(key) ?? 0), 0);
+        if (!Number.isFinite(foldSum) || foldSum <= 0) {
+          warnings.push("Soma das dobras inválida.");
+        } else {
+          const calculation = calculateBodyFatPercent(item.key, sex, age, foldSum);
+          bodyFatPercent = calculation.bodyFatPercent;
+          density = calculation.density;
+          method = calculation.method;
+          if (!Number.isFinite(bodyFatPercent)) warnings.push("Resultado não calculado com esses dados.");
+        }
+      }
+
+      return {
+        key: item.key,
+        label: item.label,
+        isSelected: item.key === equation.key,
+        isPertinent: applicabilityWarnings.length === 0,
+        bodyFatPercent,
+        density,
+        foldSum,
+        method,
+        requiredFolds: item.foldKeys.map((key) => ({
+          label: fullFieldByKey.get(key)?.short ?? key,
+          value: formatMaybeNumber(meanByKey.get(key) ?? Number.NaN, 1, " mm"),
+        })),
+        warnings,
+      };
+    });
+    const selectedComparison = comparisons.find((item) => item.key === equation.key);
     const warnings: string[] = [];
 
-    if (age < equation.ageRange[0] || age > equation.ageRange[1]) {
-      warnings.push(`Idade fora da faixa original da equação (${equation.ageRange[0]}-${equation.ageRange[1]} anos).`);
-    }
+    selectedComparison?.warnings.forEach((warning) => warnings.push(warning));
     if (age > 100) warnings.push("Idade acima de 100 anos: conferir cadastro.");
     if (mass < 25 || mass > 250) warnings.push("Massa corporal fora da faixa usual: conferir valor.");
     if (stature < 100 || stature > 230) warnings.push("Estatura fora da faixa usual: conferir valor.");
@@ -1042,24 +1206,23 @@ export default function Home() {
         age,
         mass,
         stature,
+        selectedEquationKey: equation.key,
         equationLabel: equation.label,
-        equationMethod: method,
-        bodyFatPercent,
-        density,
-        foldSum,
+        equationMethod: selectedComparison?.method ?? (equation.direct ? "Equação direta" : "Conversão por Siri"),
+        bodyFatPercent: selectedComparison?.bodyFatPercent ?? Number.NaN,
+        density: selectedComparison?.density ?? Number.NaN,
+        foldSum: selectedComparison?.foldSum ?? Number.NaN,
         imc,
         imcClassification: classifyImc(imc),
         rcq,
         rce,
         cmb,
-        requiredFolds: equation.foldKeys.map((key) => ({
-          label: fullFieldByKey.get(key)?.short ?? key,
-          value: formatMaybeNumber(meanByKey.get(key) ?? Number.NaN, 1, " mm"),
-        })),
+        requiredFolds: selectedComparison?.requiredFolds ?? [],
         allMeasurements: activeIsakFields.map((field) => ({
           label: field.short,
           value: formatMaybeNumber(meanByKey.get(field.key) ?? Number.NaN, 1, field.kind === "skinfold" ? " mm" : " cm"),
         })),
+        comparisons,
         warnings,
       },
     };
@@ -1109,6 +1272,13 @@ export default function Home() {
       ["", ""],
       ["Medidas usadas", ""],
       ...compositionResult.allMeasurements.map((metric) => [metric.label, metric.value] as [string, string]),
+      ["", ""],
+      ["Comparação entre equações", ""],
+      ["Equação", "Pertinência | % gordura | Soma | Avisos"],
+      ...compositionResult.comparisons.map((comparison) => [
+        comparison.label,
+        `${comparison.isPertinent ? "Pertinente" : "Não pertinente"} | ${formatMaybeNumber(comparison.bodyFatPercent, 2, "%")} | ${formatMaybeNumber(comparison.foldSum, 1, " mm")} | ${comparison.warnings.join(" | ") || "Sem avisos"}`,
+      ] as [string, string]),
     ];
     const csv = csvRows
       .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
@@ -1117,6 +1287,21 @@ export default function Home() {
       `composicao_isak_${safeFilenamePart(compositionResult.participantId)}_${dateStamp(new Date(compositionResult.date))}.csv`,
       new Blob([csv], { type: "text/csv;charset=utf-8" }),
     );
+  };
+
+  const exportCompositionExcel = async () => {
+    if (!compositionResult) return;
+    try {
+      await generateLocalIsakExcel({
+        participantId,
+        date,
+        measurements: isakData,
+        expandedSkinfolds: isakExpandedSkinfolds,
+        compositionResult,
+      });
+    } catch {
+      toast.error("Não foi possível gerar o Excel completo");
+    }
   };
 
   const exportCompositionJpeg = async () => {
@@ -1197,7 +1382,7 @@ export default function Home() {
   };
 
   const saveIsakEvaluation = async (data = isakData) => {
-    const payload = { participantId, date, measurements: data, expandedSkinfolds: isakExpandedSkinfolds };
+    const payload = { participantId, date, measurements: data, expandedSkinfolds: isakExpandedSkinfolds, compositionResult };
     try {
       if (isStaticPages) {
         await generateLocalIsakExcel(payload);
@@ -1493,6 +1678,19 @@ export default function Home() {
   const isakCollect = (activeApp === "isak" || (isTutorial && isakTutorialStep === "measurements")) && !isakReview;
   const reviewScreen = ((activeApp === "antropo" && antropoReview) || (isIsak && isakReview)) && !isakCompositionActive;
   const antropoCollect = activeApp === "antropo" && !antropoReview;
+  const selectedCompositionEquation = compositionEquations.find((item) => item.key === compositionInputs.equation);
+  const selectedCompositionAge = parseNumericInput(compositionInputs.age);
+  const selectedCompositionFieldByKey = new Map(buildIsakFields(true).map((field) => [field.key, field]));
+  const selectedCompositionMeanByKey = new Map(activeIsakFields.map((field) => [field.key, calculateMean(isakData[field.key] ?? [])]));
+  const selectedCompositionNotices =
+    selectedCompositionEquation && compositionInputs.sex && Number.isFinite(selectedCompositionAge)
+      ? [
+          ...getEquationApplicabilityWarnings(selectedCompositionEquation, compositionInputs.sex, selectedCompositionAge),
+          ...selectedCompositionEquation.foldKeys
+            .filter((key) => !Number.isFinite(selectedCompositionMeanByKey.get(key)))
+            .map((key) => `Dobra exigida ainda ausente: ${selectedCompositionFieldByKey.get(key)?.short ?? key}.`),
+        ]
+      : [];
 
   const headerInfo: Record<string, { kicker: string; title: string }> = {
     home: { kicker: "", title: "PORTAL SAÚDE DE ATLETA" },
@@ -2119,6 +2317,14 @@ export default function Home() {
                       Jackson & Pollock homens e Petroski mulheres exigem as dobras torácica ou axilar média. Para essas equações, marque a avaliação expandida no início do ISAK Tutorial.
                     </span>
                   </div>
+                  {selectedCompositionNotices.length > 0 && (
+                    <div style={{ background: "#FEF6E7", border: "1px solid #F4D58A", borderRadius: 14, padding: "12px 14px", display: "flex", gap: 10 }}>
+                      <Info size={18} color="#8A6A1F" style={{ flex: "none", marginTop: 1 }} />
+                      <span style={{ fontSize: 12.5, color: "#8A6A1F", lineHeight: 1.5 }}>
+                        <strong>Equação com cautela:</strong> {selectedCompositionNotices.join(" ")} Você poderá avançar mesmo assim.
+                      </span>
+                    </div>
+                  )}
                   <div style={{ display: "flex", gap: 10 }}>
                     <button type="button" onClick={() => setIsakCompositionStep("prompt")} className="sa-tap" style={secondaryBtnStyle}>
                       Voltar
@@ -2227,14 +2433,59 @@ export default function Home() {
                         ))}
                       </div>
                     )}
+
+                    <div style={{ marginTop: 14 }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: C.indigo, marginBottom: 7 }}>Comparação entre equações</div>
+                      <div style={{ display: "grid", gap: 7 }}>
+                        {compositionResult.comparisons.map((comparison) => (
+                          <div
+                            key={comparison.key}
+                            style={{
+                              border: `1px solid ${comparison.isSelected ? C.indigo : C.border}`,
+                              background: comparison.isSelected ? C.indigoSoft : "#FBFCFD",
+                              borderRadius: 12,
+                              padding: 10,
+                            }}
+                          >
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontSize: 12.5, color: C.ink, fontWeight: 800 }}>
+                                  {comparison.label}
+                                  {comparison.isSelected ? " · destaque" : ""}
+                                </div>
+                                <div style={{ fontSize: 10.5, color: comparison.isPertinent ? C.tealDark : "#8A6A1F", fontWeight: 800, marginTop: 2 }}>
+                                  {comparison.isPertinent ? "Pertinente para sexo/idade" : "Não pertinente ou com cautela"}
+                                </div>
+                              </div>
+                              <div style={{ flex: "none", textAlign: "right" }}>
+                                <div style={{ fontSize: 16, color: C.ink, fontWeight: 900, fontFamily: FONT_HEAD }}>
+                                  {formatMaybeNumber(comparison.bodyFatPercent, 1, "%")}
+                                </div>
+                                <div style={{ fontSize: 10.5, color: C.faint, fontWeight: 700 }}>
+                                  Σ {formatMaybeNumber(comparison.foldSum, 1, " mm")}
+                                </div>
+                              </div>
+                            </div>
+                            {comparison.warnings.length > 0 && (
+                              <div style={{ fontSize: 11, color: "#8A6A1F", lineHeight: 1.45, marginTop: 6 }}>
+                                {comparison.warnings.join(" ")}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
                     <button type="button" onClick={exportCompositionJpeg} className="sa-tap" style={secondaryWideBtnStyle}>
                       <Download size={16} /> JPEG
                     </button>
                     <button type="button" onClick={exportCompositionCsv} className="sa-tap" style={secondaryWideBtnStyle}>
                       <Download size={16} /> CSV
+                    </button>
+                    <button type="button" onClick={exportCompositionExcel} className="sa-tap" style={secondaryWideBtnStyle}>
+                      <Download size={16} /> Excel
                     </button>
                   </div>
                   <div style={{ display: "flex", gap: 10 }}>
